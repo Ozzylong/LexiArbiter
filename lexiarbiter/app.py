@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import sys
 from pathlib import Path
 from typing import Optional
 
-from PySide6.QtCore import Qt, QSize
+log = logging.getLogger(__name__)
+
+from PySide6.QtCore import Qt, QSize, QTimer
 from PySide6.QtGui import (
     QAction, QActionGroup, QColor, QIcon, QKeySequence, QPainter, QPalette,
     QPixmap, QShortcut,
@@ -25,9 +28,16 @@ from .core.config import (
     AnnotationMode, GroupDef, LabelDef, UserPreferences,
     list_annotation_modes, load_annotation_mode,
 )
+from .core.logger import current_log_dir
 from .core.models import Annotation, Document
 from .widgets.editor import AnnotationEditor
 from .widgets.file_panel import FilePanel
+
+
+# Autosave cadence. 60s is a good compromise — short enough that worst-case
+# data loss (Qt/C++ crash, OOM, power loss) is bounded, long enough not to
+# pester the disk while the user is mid-annotation.
+_AUTOSAVE_INTERVAL_MS = 60_000
 
 
 # ---------------------------------------------------------------------------
@@ -91,6 +101,14 @@ class MainWindow(QMainWindow):
 
         self._update_actions()
         self._refresh_status()
+
+        # Autosave: 上次寫入的 autosave 檔位置；正式存檔成功後刪除這個檔，
+        # 避免 save-as 之後留下指向舊位置的孤兒。
+        self._last_autosave_path: Optional[Path] = None
+        self._autosave_timer = QTimer(self)
+        self._autosave_timer.setInterval(_AUTOSAVE_INTERVAL_MS)
+        self._autosave_timer.timeout.connect(self._autosave_tick)
+        self._autosave_timer.start()
 
     # ---------------------------------------------------- mode resolution
 
@@ -187,6 +205,13 @@ class MainWindow(QMainWindow):
 
         # Help
         m_help = mb.addMenu("說明(&H)")
+        act_open_logs = QAction("開啟 log 資料夾", self)
+        act_open_logs.triggered.connect(self._open_log_dir)
+        m_help.addAction(act_open_logs)
+        act_copy_diag = QAction("複製診斷資訊", self)
+        act_copy_diag.triggered.connect(self._copy_diagnostics)
+        m_help.addAction(act_copy_diag)
+        m_help.addSeparator()
         act_about = QAction("關於 LexiArbiter", self)
         act_about.triggered.connect(self._show_about)
         m_help.addAction(act_about)
@@ -302,46 +327,50 @@ class MainWindow(QMainWindow):
         if self.doc is None:
             self.status.showMessage("請先開啟一個檔案再進行標註。", 4000)
             return
-        if not self.editor.has_selection():
-            ann_id = self.editor.annotation_at_cursor()
-            if ann_id is None:
-                self.status.showMessage("請先選取一段文字，或將游標放在已標註的範圍內。", 4000)
+        try:
+            if not self.editor.has_selection():
+                ann_id = self.editor.annotation_at_cursor()
+                if ann_id is None:
+                    self.status.showMessage("請先選取一段文字，或將游標放在已標註的範圍內。", 4000)
+                    return
+                ann = self.doc.find_annotation(ann_id)
+                if ann is None:
+                    return
+                ann.labels[group_id] = label_id
+                self.doc.dirty = True
+                self.editor.refresh_highlights()
+                self._refresh_status()
                 return
-            ann = self.doc.find_annotation(ann_id)
-            if ann is None:
-                return
-            ann.labels[group_id] = label_id
+
+            s, e = self.editor.storage_selection()
+            # If selection coincides exactly with an existing annotation, update it.
+            existing = [a for a in self.doc.annotations
+                        if a.start == s and a.end == e]
+            if existing:
+                ann = existing[0]
+                ann.labels[group_id] = label_id
+            else:
+                # If selection overlaps existing annotations *partially*, ask user.
+                overlapping = self.doc.annotations_in_range(s, e)
+                if overlapping:
+                    reply = QMessageBox.question(
+                        self, "重疊處理",
+                        "選取範圍與既有標註重疊。\n要刪除既有標註再新增嗎？\n（按否將與既有標註並存。）",
+                        QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel,
+                    )
+                    if reply == QMessageBox.Cancel:
+                        return
+                    if reply == QMessageBox.Yes:
+                        for a in overlapping:
+                            self.doc.remove_annotation(a.id)
+                ann = Annotation(start=s, end=e, labels={group_id: label_id})
+                self.doc.add_annotation(ann)
             self.doc.dirty = True
             self.editor.refresh_highlights()
             self._refresh_status()
-            return
-
-        s, e = self.editor.storage_selection()
-        # If selection coincides exactly with an existing annotation, update it.
-        existing = [a for a in self.doc.annotations
-                    if a.start == s and a.end == e]
-        if existing:
-            ann = existing[0]
-            ann.labels[group_id] = label_id
-        else:
-            # If selection overlaps existing annotations *partially*, ask user.
-            overlapping = self.doc.annotations_in_range(s, e)
-            if overlapping:
-                reply = QMessageBox.question(
-                    self, "重疊處理",
-                    "選取範圍與既有標註重疊。\n要刪除既有標註再新增嗎？\n（按否將與既有標註並存。）",
-                    QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel,
-                )
-                if reply == QMessageBox.Cancel:
-                    return
-                if reply == QMessageBox.Yes:
-                    for a in overlapping:
-                        self.doc.remove_annotation(a.id)
-            ann = Annotation(start=s, end=e, labels={group_id: label_id})
-            self.doc.add_annotation(ann)
-        self.doc.dirty = True
-        self.editor.refresh_highlights()
-        self._refresh_status()
+        except Exception:
+            log.error("apply_label 發生例外 group=%s label=%s", group_id, label_id, exc_info=True)
+            QMessageBox.critical(self, "標註錯誤", "套用標籤時發生錯誤，請查看 logs/lexiarbiter.log。")
 
     def clear_group_in_selection(self, group_id: str):
         if self.doc is None:
@@ -424,9 +453,38 @@ class MainWindow(QMainWindow):
         self.load_file(path)
 
     def load_file(self, path: str):
+        log.info("開啟檔案：%s", path)
+        src_path = Path(path)
+
+        # 偵測同位置較新的 autosave 檔，詢問使用者是否還原。
+        autosave = self._autosave_companion(src_path)
+        use_autosave = False
+        if autosave is not None:
+            reply = QMessageBox.question(
+                self, "偵測到自動存檔",
+                f"找到比 {src_path.name} 更新的自動存檔：\n{autosave.name}\n\n"
+                "要載入自動存檔（保留未存的標註）嗎？\n"
+                "選「否」會直接開啟原檔案。",
+                QMessageBox.Yes | QMessageBox.No,
+            )
+            if reply == QMessageBox.Yes:
+                use_autosave = True
+                log.info("使用者選擇從 autosave 還原：%s", autosave)
+
         try:
-            doc = iomod.load_any(path)
+            if use_autosave:
+                doc = iomod.load_lbtxt(autosave)
+                # 視為「使用者開啟原檔」：保留原 file_path（如果是 .lbtxt 直接覆蓋；
+                # 如果是 .json 則 file_path=None，下次按存檔會走 save_as）。
+                # dirty=True 提醒使用者這份內容尚未正式存檔。
+                doc.file_path = (str(src_path)
+                                 if src_path.suffix.lower() == ".lbtxt"
+                                 else None)
+                doc.dirty = True
+            else:
+                doc = iomod.load_any(path)
         except Exception as e:
+            log.error("讀檔失敗：%s", path, exc_info=True)
             QMessageBox.critical(self, "讀檔失敗", str(e))
             return
 
@@ -455,11 +513,14 @@ class MainWindow(QMainWindow):
             return False
         path = self.doc.file_path
         if path and path.lower().endswith(".lbtxt"):
+            log.info("儲存檔案：%s", path)
             try:
                 iomod.save_lbtxt(self.doc, path, self.mode)
             except Exception as e:
+                log.error("儲存失敗：%s", path, exc_info=True)
                 QMessageBox.critical(self, "儲存失敗", str(e))
                 return False
+            self._cleanup_autosave()
             self.status.showMessage(f"已儲存：{path}", 4000)
             self.file_panel.refresh()
             self._update_window_title()
@@ -482,11 +543,14 @@ class MainWindow(QMainWindow):
             return False
         if not path.lower().endswith(".lbtxt"):
             path = path + ".lbtxt"
+        log.info("另存檔案：%s", path)
         try:
             iomod.save_lbtxt(self.doc, path, self.mode)
         except Exception as e:
+            log.error("另存失敗：%s", path, exc_info=True)
             QMessageBox.critical(self, "儲存失敗", str(e))
             return False
+        self._cleanup_autosave()
         self.status.showMessage(f"已儲存：{path}", 4000)
         self.file_panel.set_directory(Path(path).parent, Path(path))
         self._update_window_title()
@@ -511,9 +575,11 @@ class MainWindow(QMainWindow):
             return
         if not path.lower().endswith(".txt"):
             path = path + ".txt"
+        log.info("匯出 .txt：%s", path)
         try:
             summary = iomod.export_txt(self.doc, path, self.mode)
         except Exception as e:
+            log.error("匯出失敗：%s", path, exc_info=True)
             QMessageBox.critical(self, "匯出失敗", str(e))
             return
 
@@ -547,6 +613,7 @@ class MainWindow(QMainWindow):
         target = next((m for m in self.modes if m.id == mode_id), None)
         if target is None:
             return
+        log.info("切換標註模式：%s -> %s", self.mode.id, mode_id)
         if self.doc is not None and self.doc.dirty:
             reply = QMessageBox.question(
                 self, "切換模式",
@@ -665,24 +732,135 @@ class MainWindow(QMainWindow):
         for a in (self.act_save, self.act_save_as, self.act_export, self.act_remove_ann):
             a.setEnabled(has_doc)
 
+    # --------------------------------------------------------- autosave
+
+    def _compute_autosave_path(self) -> Optional[Path]:
+        """目前 doc 對應的 autosave 檔位置。
+
+        有 file_path 時放在原檔旁邊（`<file>.autosave.lbtxt`）；
+        尚未存過的新檔則退而求其次寫到 log 資料夾，避免完全沒備份。
+        """
+        if self.doc is None:
+            return None
+        if self.doc.file_path:
+            return Path(self.doc.file_path).with_suffix(".autosave.lbtxt")
+        d = current_log_dir()
+        if d is None:
+            return None
+        return d / "untitled.autosave.lbtxt"
+
+    def _autosave_companion(self, src_path: Path) -> Optional[Path]:
+        """若 src_path 旁邊有比它新的 autosave 檔，回傳其路徑。
+
+        autosave 檔本身不會再去找 companion（避免遞迴）。
+        """
+        if src_path.name.endswith(".autosave.lbtxt"):
+            return None
+        autosave = src_path.with_suffix(".autosave.lbtxt")
+        try:
+            if not autosave.exists() or not src_path.exists():
+                return None
+            if autosave.stat().st_mtime > src_path.stat().st_mtime:
+                return autosave
+        except OSError:
+            return None
+        return None
+
+    def _autosave_tick(self):
+        """QTimer 每 60 秒呼叫；只在 doc 有未存內容時寫入。"""
+        if self.doc is None or not self.doc.dirty:
+            return
+        path = self._compute_autosave_path()
+        if path is None:
+            return
+        try:
+            # update_doc_state=False：不要因為 autosave 就把 dirty 清掉，
+            # 使用者仍應該看到「未儲存」標記、仍應該主動存檔。
+            iomod.save_lbtxt(self.doc, path, self.mode, update_doc_state=False)
+            self._last_autosave_path = path
+            log.info("autosave: %s", path)
+        except Exception:
+            log.error("autosave 失敗：%s", path, exc_info=True)
+
+    def _cleanup_autosave(self):
+        """正式存檔成功後刪除 autosave，避免下次開檔誤判。"""
+        p = self._last_autosave_path
+        if p is not None and p.exists():
+            try:
+                p.unlink()
+                log.info("已刪除 autosave：%s", p)
+            except OSError:
+                log.warning("刪除 autosave 失敗：%s", p, exc_info=True)
+        self._last_autosave_path = None
+
+    # ----------------------------------------------------------- 診斷
+
+    def _open_log_dir(self):
+        d = current_log_dir()
+        if d is None or not d.exists():
+            QMessageBox.warning(
+                self, "找不到 log 資料夾",
+                "目前沒有可用的 log 資料夾（可能 logging 初始化失敗）。",
+            )
+            return
+        if sys.platform.startswith("win"):
+            os.startfile(d)  # type: ignore[attr-defined]
+        elif sys.platform == "darwin":
+            os.system(f"open '{d}'")
+        else:
+            os.system(f"xdg-open '{d}'")
+
+    def _copy_diagnostics(self):
+        """把版本/平台/log 路徑等資訊複製到剪貼簿，供使用者貼到回報訊息中。"""
+        import platform as _platform
+        lines = [
+            f"LexiArbiter {__version__}",
+            f"Python {sys.version.split()[0]}",
+            f"Platform: {_platform.platform()}",
+            f"app_root: {cfgmod.app_root()}",
+            f"log_dir: {current_log_dir()}",
+            f"active_mode: {self.mode.id} ({self.mode.name})",
+            f"available_modes: {', '.join(m.id for m in self.modes)}",
+            f"current_doc: {self.doc.file_path if self.doc else '(none)'}",
+            f"dirty: {self.doc.dirty if self.doc else False}",
+            f"annotations: {len(self.doc.annotations) if self.doc else 0}",
+        ]
+        text = "\n".join(lines)
+        QApplication.clipboard().setText(text)
+        QMessageBox.information(
+            self, "已複製診斷資訊",
+            "下列資訊已複製到剪貼簿，請連同 log 檔一起貼給開發者：\n\n" + text,
+        )
+
     # ------------------------------------------------------------ events
+
+    def emergency_save(self) -> None:
+        """程式崩潰時由 crash hook 呼叫，嘗試將未儲存的標註寫到備份檔。
+
+        不顯示任何 UI，結果只寫 log。
+        """
+        if self.doc is None or not self.doc.dirty:
+            return
+        # 已有檔案路徑 → 寫在原檔旁邊；否則寫到 log 資料夾，
+        # 保證落點是先前驗證過可寫的位置。
+        if self.doc.file_path:
+            backup_path = Path(self.doc.file_path).with_suffix(".crash_backup.lbtxt")
+        else:
+            d = current_log_dir()
+            if d is None:
+                log.error("緊急存檔失敗：沒有 file_path 也沒有 log_dir 可寫")
+                return
+            from datetime import datetime
+            stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            backup_path = d / f"emergency_{stamp}.crash_backup.lbtxt"
+        try:
+            iomod.save_lbtxt(self.doc, backup_path, self.mode, update_doc_state=False)
+            log.info("緊急存檔成功：%s", backup_path)
+        except Exception:
+            log.error("緊急存檔失敗：%s", backup_path, exc_info=True)
 
     def closeEvent(self, ev):
         if not self._confirm_unsaved():
             ev.ignore()
             return
         super().closeEvent(ev)
-
-    # ------------------------------------------------------------ misc
-
-    def _show_about(self):
-        QMessageBox.about(
-            self,
-            f"關於 {__app_name__}",
-            (
-                f"<h3>{__app_name__} {__version__}</h3>"
-                "<p>面向法律判決 multi-task learning 標註的桌面工具。</p>"
-                "<p>支援 .json / .lbtxt 開啟、.lbtxt 進度存檔、.txt 模型用匯出，"
-                "並可透過 <code>configs/annotation_modes/*.json</code> 切換標註模式。</p>"
-            ),
-        )

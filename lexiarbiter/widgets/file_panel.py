@@ -12,9 +12,12 @@ state:
 
 from __future__ import annotations
 
+import logging
 import os
 from pathlib import Path
 from typing import Optional
+
+log = logging.getLogger(__name__)
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QFont
@@ -71,7 +74,12 @@ class FilePanel(QWidget):
 
         # Group sibling files by stem so we can show one row per judgment.
         files: dict[str, dict[str, Path]] = {}
-        for entry in sorted(self._dir.iterdir()):
+        try:
+            entries = sorted(self._dir.iterdir())
+        except OSError:
+            log.warning("無法讀取目錄：%s", self._dir, exc_info=True)
+            return
+        for entry in entries:
             if not entry.is_file():
                 continue
             ext = entry.suffix.lower()

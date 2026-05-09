@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
+
+log = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -180,7 +183,8 @@ def list_annotation_modes() -> list[AnnotationMode]:
         try:
             out.append(load_annotation_mode(p))
         except Exception:
-            # Skip malformed configs but don't crash the app.
+            # 略過損壞的設定檔，但記錄 warning 方便除錯
+            log.warning("略過無法載入的標註模式設定檔：%s", p, exc_info=True)
             continue
     return out
 
@@ -240,7 +244,8 @@ class UserPreferences:
                 merged = _deep_merge(DEFAULT_PREFERENCES, user)
                 return cls(merged, path)
             except Exception:
-                pass
+                # 讀取失敗時退回預設值，並記錄 warning
+                log.warning("讀取使用者偏好設定失敗，使用預設值：%s", path, exc_info=True)
         return cls(dict(DEFAULT_PREFERENCES), path)
 
     def save(self) -> None:

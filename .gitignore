@@ -11,3 +11,5 @@ venv/
 *.lbtxt
 !example/*.lbtxt
 example/
+logs/
+.claude/

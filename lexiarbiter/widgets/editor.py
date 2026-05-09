@@ -12,7 +12,10 @@ always refer to the original (storage) text.
 
 from __future__ import annotations
 
+import logging
 from typing import Optional
+
+log = logging.getLogger(__name__)
 
 from PySide6.QtCore import Qt, QPoint, Signal
 from PySide6.QtGui import (
@@ -162,21 +165,26 @@ class AnnotationEditor(QTextEdit):
     def refresh_highlights(self):
         if self._doc is None or self._mode is None or self._omap is None:
             return
-        selections = []
-        for ann in self._doc.annotations:
-            sel = QTextEdit.ExtraSelection()
-            cursor = self.textCursor()
-            d_start = self._omap.to_display(ann.start)
-            d_end = self._omap.to_display(ann.end)
-            cursor.setPosition(d_start)
-            cursor.setPosition(d_end, QTextCursor.KeepAnchor)
-            sel.cursor = cursor
+        try:
+            selections = []
+            for ann in self._doc.annotations:
+                sel = QTextEdit.ExtraSelection()
+                cursor = self.textCursor()
+                d_start = self._omap.to_display(ann.start)
+                d_end = self._omap.to_display(ann.end)
+                cursor.setPosition(d_start)
+                cursor.setPosition(d_end, QTextCursor.KeepAnchor)
+                sel.cursor = cursor
 
-            fmt = QTextCharFormat()
-            self._apply_format_for_labels(fmt, ann)
-            sel.format = fmt
-            selections.append(sel)
-        self.setExtraSelections(selections)
+                fmt = QTextCharFormat()
+                self._apply_format_for_labels(fmt, ann)
+                sel.format = fmt
+                selections.append(sel)
+            self.setExtraSelections(selections)
+        except Exception:
+            # 高亮渲染失敗時清空顯示，避免整個 UI 崩潰
+            log.error("refresh_highlights 發生例外，已清空高亮", exc_info=True)
+            self.setExtraSelections([])
 
     def _apply_format_for_labels(self, fmt: QTextCharFormat, ann: Annotation):
         """First group with a non-null color drives the background.

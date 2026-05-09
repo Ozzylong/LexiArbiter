@@ -15,12 +15,15 @@ Three file types:
 from __future__ import annotations
 
 import json
+import logging
 import re
 from pathlib import Path
 from typing import Optional
 
 from .config import AnnotationMode, ExportConfig
 from .models import Annotation, Document
+
+log = logging.getLogger(__name__)
 
 
 LBTXT_VERSION = 1
@@ -37,6 +40,7 @@ def load_judicial_json(path: Path | str) -> Document:
     one record. Try both.
     """
     path = Path(path)
+    log.info("載入 judicial JSON：%s", path)
     with open(path, "r", encoding="utf-8") as f:
         data = json.load(f)
     if isinstance(data, list):
@@ -65,6 +69,7 @@ def load_judicial_json(path: Path | str) -> Document:
 def load_lbtxt(path: Path | str) -> Document:
     """Load a LexiArbiter work-in-progress file."""
     path = Path(path)
+    log.info("載入 lbtxt：%s", path)
     with open(path, "r", encoding="utf-8") as f:
         data = json.load(f)
     if data.get("format") != "lbtxt":
@@ -100,8 +105,16 @@ def load_any(path: Path | str) -> Document:
 # Save .lbtxt
 # ---------------------------------------------------------------------------
 
-def save_lbtxt(doc: Document, path: Path | str, schema: AnnotationMode) -> None:
+def save_lbtxt(doc: Document, path: Path | str, schema: AnnotationMode,
+               update_doc_state: bool = True) -> None:
+    """寫入 .lbtxt。
+
+    update_doc_state=False 時不更動 doc.file_path / dirty / schema_id，
+    供 autosave、emergency 之類的「旁路存檔」使用——這些寫法不應該讓
+    使用者看到的「未儲存」狀態消失。
+    """
     path = Path(path)
+    log.info("儲存 lbtxt：%s（標註數：%d）", path, len(doc.annotations))
     payload = {
         "format": "lbtxt",
         "version": LBTXT_VERSION,
@@ -116,9 +129,10 @@ def save_lbtxt(doc: Document, path: Path | str, schema: AnnotationMode) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False, indent=2)
-    doc.file_path = str(path)
-    doc.schema_id = schema.id
-    doc.dirty = False
+    if update_doc_state:
+        doc.file_path = str(path)
+        doc.schema_id = schema.id
+        doc.dirty = False
 
 
 # ---------------------------------------------------------------------------
@@ -148,6 +162,7 @@ def export_txt(doc: Document, path: Path | str, schema: AnnotationMode) -> dict:
     ``partial_count`` (int), ``warnings`` (list[str]).
     """
     path = Path(path)
+    log.info("匯出 txt：%s", path)
     exp = schema.export
 
     sorted_anns = doc.sorted_annotations()
