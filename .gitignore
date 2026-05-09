@@ -13,3 +13,4 @@ venv/
 example/
 logs/
 .claude/
+documents/
