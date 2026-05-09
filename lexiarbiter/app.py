@@ -89,7 +89,7 @@ class MainWindow(QMainWindow):
         splitter.addWidget(self.file_panel)
         splitter.setStretchFactor(0, 1)
         splitter.setStretchFactor(1, 0)
-        splitter.setSizes([900, 280])
+        splitter.setSizes([900, 320])
 
         self.setCentralWidget(splitter)
 
@@ -105,6 +105,8 @@ class MainWindow(QMainWindow):
         # Autosave: 上次寫入的 autosave 檔位置；正式存檔成功後刪除這個檔，
         # 避免 save-as 之後留下指向舊位置的孤兒。
         self._last_autosave_path: Optional[Path] = None
+        # 「開啟資料夾…」記住上次選的目錄，僅 session 內有效。
+        self._last_browse_dir: Optional[Path] = None
         self._autosave_timer = QTimer(self)
         self._autosave_timer.setInterval(_AUTOSAVE_INTERVAL_MS)
         self._autosave_timer.timeout.connect(self._autosave_tick)
@@ -142,6 +144,11 @@ class MainWindow(QMainWindow):
         self.act_open.setShortcut(self.prefs.app_shortcut("open", "Ctrl+O"))
         self.act_open.triggered.connect(self.action_open)
         m_file.addAction(self.act_open)
+
+        self.act_open_folder = QAction("開啟資料夾…", self)
+        self.act_open_folder.setShortcut(self.prefs.app_shortcut("open_folder", "Ctrl+Shift+O"))
+        self.act_open_folder.triggered.connect(self.action_open_folder)
+        m_file.addAction(self.act_open_folder)
 
         self.act_save = QAction("儲存標註進度 (.lexa)", self)
         self.act_save.setShortcut(self.prefs.app_shortcut("save", "Ctrl+S"))
@@ -242,6 +249,9 @@ class MainWindow(QMainWindow):
 
         a_open = tb.addAction(_swatch_icon("#FFFFFF"), "開啟檔案")
         a_open.triggered.connect(self.action_open)
+
+        a_open_folder = tb.addAction(_swatch_icon("#FFFFFF"), "開啟資料夾")
+        a_open_folder.triggered.connect(self.action_open_folder)
 
         a_save = tb.addAction(_swatch_icon("#FFFFFF"), "儲存進度")
         a_save.triggered.connect(self.action_save)
@@ -449,6 +459,27 @@ class MainWindow(QMainWindow):
         )
         if path:
             self.load_file(path)
+
+    def action_open_folder(self):
+        """瀏覽任意資料夾並把該資料夾的 .json/.lexa/.txt 列到右側標籤頁。
+
+        不會關閉目前已開啟的文件；只是切換右側清單檢視。
+        """
+        if self._last_browse_dir is not None:
+            start_dir = str(self._last_browse_dir)
+        elif self.doc and self.doc.file_path:
+            start_dir = str(Path(self.doc.file_path).parent)
+        else:
+            start_dir = ""
+        folder = QFileDialog.getExistingDirectory(self, "開啟資料夾", start_dir)
+        if not folder:
+            return
+        p = Path(folder)
+        self._last_browse_dir = p
+        current = (Path(self.doc.file_path)
+                   if (self.doc and self.doc.file_path) else None)
+        self.file_panel.set_directory(p, current)
+        self.status.showMessage(f"已切換資料夾：{p}", 4000)
 
     def _handle_file_open_requested(self, path: str):
         if self.doc and self.doc.file_path and Path(path).resolve() == Path(self.doc.file_path).resolve():
