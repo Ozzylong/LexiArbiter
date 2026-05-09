@@ -8,8 +8,8 @@ dist/
 venv/
 .idea/
 .vscode/
-*.lbtxt
-!example/*.lbtxt
+*.lexa
+!example/*.lexa
 example/
 logs/
 .claude/

@@ -1,13 +1,16 @@
 """Right-hand file list panel.
 
-Shows every ``.json`` / ``.lbtxt`` / ``.txt`` file in the same folder as the
+Shows every ``.json`` / ``.lexa`` / ``.txt`` file in the same folder as the
 currently-loaded document. A small icon next to each file shows its annotation
 state:
 
 * ``●`` (filled) - the working file (currently open)
-* ``◐`` - has an associated ``.lbtxt`` (work-in-progress) on disk
-* ``◇`` - has an associated ``.txt`` (final export) but no ``.lbtxt``
+* ``◐`` - has an associated ``.lexa`` (work-in-progress) on disk
+* ``◇`` - has an associated ``.txt`` (final export) but no ``.lexa``
 * ``○`` - raw, untouched
+
+The current row also displays a trailing ``*`` while the in-memory document
+has unsaved changes, mirroring the dirty marker in the window title.
 """
 
 from __future__ import annotations
@@ -26,11 +29,11 @@ from PySide6.QtWidgets import (
 )
 
 
-_EXTS = (".json", ".lbtxt", ".txt")
+_EXTS = (".json", ".lexa", ".txt")
 
 
-def _stem_no_lbtxt(p: Path) -> str:
-    """Stem used to group raw json/lbtxt/txt of the same judgment."""
+def _stem_no_lexa(p: Path) -> str:
+    """Stem used to group raw json/lexa/txt of the same judgment."""
     return p.stem
 
 
@@ -59,13 +62,48 @@ class FilePanel(QWidget):
 
         self._dir: Optional[Path] = None
         self._current_path: Optional[Path] = None
+        self._current_dirty: bool = False
 
     # ----------------------------------------------------------- public api
 
     def set_directory(self, directory: Optional[Path], current_path: Optional[Path]):
         self._dir = Path(directory) if directory else None
         self._current_path = Path(current_path) if current_path else None
+        # 切檔後 dirty 由 MainWindow._update_window_title() 在後續同步補正。
+        self._current_dirty = False
         self.refresh()
+
+    def set_dirty(self, dirty: bool):
+        """更新「目前列」未存檔標記，不觸發目錄重讀。"""
+        if dirty == self._current_dirty:
+            return
+        self._current_dirty = dirty
+        if self._current_path is None:
+            return
+        try:
+            current_resolved = self._current_path.resolve()
+        except OSError:
+            return
+        for i in range(self.list.count()):
+            item = self.list.item(i)
+            if item is None:
+                continue
+            path_str = item.data(Qt.UserRole)
+            if not path_str:
+                continue
+            try:
+                if Path(path_str).resolve() != current_resolved:
+                    continue
+            except OSError:
+                continue
+            text = item.text()
+            if dirty:
+                if not text.endswith("*"):
+                    item.setText(text + "*")
+            else:
+                if text.endswith("*"):
+                    item.setText(text[:-1])
+            break
 
     def refresh(self):
         self.list.clear()
@@ -90,11 +128,11 @@ class FilePanel(QWidget):
         for stem in sorted(files.keys()):
             group = files[stem]
             # Decide which to display + what state badge to show.
-            primary = group.get(".lbtxt") or group.get(".json") or group.get(".txt")
+            primary = group.get(".lexa") or group.get(".json") or group.get(".txt")
             if primary is None:
                 continue
 
-            has_lbtxt = ".lbtxt" in group
+            has_lexa = ".lexa" in group
             has_txt = ".txt" in group
             is_current = (
                 self._current_path is not None
@@ -103,18 +141,19 @@ class FilePanel(QWidget):
 
             if is_current:
                 badge = "●"
-            elif has_lbtxt:
+            elif has_lexa:
                 badge = "◐"
             elif has_txt:
                 badge = "◇"
             else:
                 badge = "○"
 
-            item = QListWidgetItem(f"{badge}  {primary.name}")
+            dirty_mark = "*" if (is_current and self._current_dirty) else ""
+            item = QListWidgetItem(f"{badge}  {primary.name}{dirty_mark}")
             item.setData(Qt.UserRole, str(primary))
             tip = f"{primary.name}"
-            if has_lbtxt:
-                tip += "\n• 已存在 .lbtxt 標註進度"
+            if has_lexa:
+                tip += "\n• 已存在 .lexa 標註進度"
             if has_txt:
                 tip += "\n• 已存在 .txt 匯出檔"
             item.setToolTip(tip)

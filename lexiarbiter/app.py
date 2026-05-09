@@ -143,7 +143,7 @@ class MainWindow(QMainWindow):
         self.act_open.triggered.connect(self.action_open)
         m_file.addAction(self.act_open)
 
-        self.act_save = QAction("儲存標註進度 (.lbtxt)", self)
+        self.act_save = QAction("儲存標註進度 (.lexa)", self)
         self.act_save.setShortcut(self.prefs.app_shortcut("save", "Ctrl+S"))
         self.act_save.triggered.connect(self.action_save)
         m_file.addAction(self.act_save)
@@ -340,6 +340,7 @@ class MainWindow(QMainWindow):
                 self.doc.dirty = True
                 self.editor.refresh_highlights()
                 self._refresh_status()
+                self._update_window_title()
                 return
 
             s, e = self.editor.storage_selection()
@@ -368,6 +369,7 @@ class MainWindow(QMainWindow):
             self.doc.dirty = True
             self.editor.refresh_highlights()
             self._refresh_status()
+            self._update_window_title()
         except Exception:
             log.error("apply_label 發生例外 group=%s label=%s", group_id, label_id, exc_info=True)
             QMessageBox.critical(self, "標註錯誤", "套用標籤時發生錯誤，請查看 logs/lexiarbiter.log。")
@@ -394,6 +396,7 @@ class MainWindow(QMainWindow):
         self.doc.dirty = True
         self.editor.refresh_highlights()
         self._refresh_status()
+        self._update_window_title()
 
     def action_remove_annotation_at_cursor(self):
         if self.doc is None:
@@ -405,6 +408,7 @@ class MainWindow(QMainWindow):
                 self.doc.remove_annotation(a.id)
             self.editor.refresh_highlights()
             self._refresh_status()
+            self._update_window_title()
             return
         ann_id = self.editor.annotation_at_cursor()
         if ann_id is None:
@@ -413,6 +417,7 @@ class MainWindow(QMainWindow):
         if self.doc.remove_annotation(ann_id):
             self.editor.refresh_highlights()
             self._refresh_status()
+            self._update_window_title()
 
     # ----------------------------------------------------------- file ops
 
@@ -440,7 +445,7 @@ class MainWindow(QMainWindow):
             start_dir = str(Path(self.doc.file_path).parent)
         path, _ = QFileDialog.getOpenFileName(
             self, "開啟檔案", start_dir,
-            "支援的格式 (*.json *.lbtxt);;判決 JSON (*.json);;標註進度 (*.lbtxt);;所有檔案 (*.*)"
+            "支援的格式 (*.json *.lexa);;判決 JSON (*.json);;標註進度 (*.lexa);;所有檔案 (*.*)"
         )
         if path:
             self.load_file(path)
@@ -473,12 +478,12 @@ class MainWindow(QMainWindow):
 
         try:
             if use_autosave:
-                doc = iomod.load_lbtxt(autosave)
-                # 視為「使用者開啟原檔」：保留原 file_path（如果是 .lbtxt 直接覆蓋；
+                doc = iomod.load_lexa(autosave)
+                # 視為「使用者開啟原檔」：保留原 file_path（如果是 .lexa 直接覆蓋；
                 # 如果是 .json 則 file_path=None，下次按存檔會走 save_as）。
                 # dirty=True 提醒使用者這份內容尚未正式存檔。
                 doc.file_path = (str(src_path)
-                                 if src_path.suffix.lower() == ".lbtxt"
+                                 if src_path.suffix.lower() == ".lexa"
                                  else None)
                 doc.dirty = True
             else:
@@ -512,10 +517,10 @@ class MainWindow(QMainWindow):
         if self.doc is None:
             return False
         path = self.doc.file_path
-        if path and path.lower().endswith(".lbtxt"):
+        if path and path.lower().endswith(".lexa"):
             log.info("儲存檔案：%s", path)
             try:
-                iomod.save_lbtxt(self.doc, path, self.mode)
+                iomod.save_lexa(self.doc, path, self.mode)
             except Exception as e:
                 log.error("儲存失敗：%s", path, exc_info=True)
                 QMessageBox.critical(self, "儲存失敗", str(e))
@@ -532,20 +537,20 @@ class MainWindow(QMainWindow):
             return False
         if self.doc.file_path:
             base = Path(self.doc.file_path)
-            default = str(base.with_suffix(".lbtxt"))
+            default = str(base.with_suffix(".lexa"))
         else:
-            default = "annotation.lbtxt"
+            default = "annotation.lexa"
         path, _ = QFileDialog.getSaveFileName(
             self, "另存標註進度", default,
-            "LexiArbiter 進度 (*.lbtxt)"
+            "LexiArbiter 進度 (*.lexa)"
         )
         if not path:
             return False
-        if not path.lower().endswith(".lbtxt"):
-            path = path + ".lbtxt"
+        if not path.lower().endswith(".lexa"):
+            path = path + ".lexa"
         log.info("另存檔案：%s", path)
         try:
-            iomod.save_lbtxt(self.doc, path, self.mode)
+            iomod.save_lexa(self.doc, path, self.mode)
         except Exception as e:
             log.error("另存失敗：%s", path, exc_info=True)
             QMessageBox.critical(self, "儲存失敗", str(e))
@@ -726,6 +731,7 @@ class MainWindow(QMainWindow):
             mark = "*" if self.doc.dirty else ""
             title = f"{name}{mark} - {title}"
         self.setWindowTitle(title)
+        self.file_panel.set_dirty(bool(self.doc and self.doc.dirty))
 
     def _update_actions(self):
         has_doc = self.doc is not None
@@ -737,26 +743,26 @@ class MainWindow(QMainWindow):
     def _compute_autosave_path(self) -> Optional[Path]:
         """目前 doc 對應的 autosave 檔位置。
 
-        有 file_path 時放在原檔旁邊（`<file>.autosave.lbtxt`）；
+        有 file_path 時放在原檔旁邊（`<file>.autosave.lexa`）；
         尚未存過的新檔則退而求其次寫到 log 資料夾，避免完全沒備份。
         """
         if self.doc is None:
             return None
         if self.doc.file_path:
-            return Path(self.doc.file_path).with_suffix(".autosave.lbtxt")
+            return Path(self.doc.file_path).with_suffix(".autosave.lexa")
         d = current_log_dir()
         if d is None:
             return None
-        return d / "untitled.autosave.lbtxt"
+        return d / "untitled.autosave.lexa"
 
     def _autosave_companion(self, src_path: Path) -> Optional[Path]:
         """若 src_path 旁邊有比它新的 autosave 檔，回傳其路徑。
 
         autosave 檔本身不會再去找 companion（避免遞迴）。
         """
-        if src_path.name.endswith(".autosave.lbtxt"):
+        if src_path.name.endswith(".autosave.lexa"):
             return None
-        autosave = src_path.with_suffix(".autosave.lbtxt")
+        autosave = src_path.with_suffix(".autosave.lexa")
         try:
             if not autosave.exists() or not src_path.exists():
                 return None
@@ -776,7 +782,7 @@ class MainWindow(QMainWindow):
         try:
             # update_doc_state=False：不要因為 autosave 就把 dirty 清掉，
             # 使用者仍應該看到「未儲存」標記、仍應該主動存檔。
-            iomod.save_lbtxt(self.doc, path, self.mode, update_doc_state=False)
+            iomod.save_lexa(self.doc, path, self.mode, update_doc_state=False)
             self._last_autosave_path = path
             log.info("autosave: %s", path)
         except Exception:
@@ -838,7 +844,7 @@ class MainWindow(QMainWindow):
             f"關於 {__app_name__}",
             f"<h3>{__app_name__} {__version__}</h3>"
             "<p>法律文件多任務標註工具（MTL 訓練資料用）。</p>"
-            "<p>讀取司法判決開放資料 JSON，輸出 <code>.lbtxt</code> 進度檔與 "
+            "<p>讀取司法判決開放資料 JSON，輸出 <code>.lexa</code> 進度檔與 "
             "<code>.txt</code> 模型訓練檔。</p>",
         )
 
@@ -854,7 +860,7 @@ class MainWindow(QMainWindow):
         # 已有檔案路徑 → 寫在原檔旁邊；否則寫到 log 資料夾，
         # 保證落點是先前驗證過可寫的位置。
         if self.doc.file_path:
-            backup_path = Path(self.doc.file_path).with_suffix(".crash_backup.lbtxt")
+            backup_path = Path(self.doc.file_path).with_suffix(".crash_backup.lexa")
         else:
             d = current_log_dir()
             if d is None:
@@ -862,9 +868,9 @@ class MainWindow(QMainWindow):
                 return
             from datetime import datetime
             stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            backup_path = d / f"emergency_{stamp}.crash_backup.lbtxt"
+            backup_path = d / f"emergency_{stamp}.crash_backup.lexa"
         try:
-            iomod.save_lbtxt(self.doc, backup_path, self.mode, update_doc_state=False)
+            iomod.save_lexa(self.doc, backup_path, self.mode, update_doc_state=False)
             log.info("緊急存檔成功：%s", backup_path)
         except Exception:
             log.error("緊急存檔失敗：%s", backup_path, exc_info=True)

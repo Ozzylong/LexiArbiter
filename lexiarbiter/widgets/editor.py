@@ -2,7 +2,7 @@
 
 We keep the *original* text in `Document.text` (with raw ``\\r\\n`` line
 endings, exactly as it appears in the source JSON), because that is what gets
-serialised into ``.lbtxt`` / ``.txt`` output and what the user's MTL pipeline
+serialised into ``.lexa`` / ``.txt`` output and what the user's MTL pipeline
 preprocesses later.
 
 For *display*, ``\\r\\n`` is normalised to ``\\n`` so Qt renders nicely. We

@@ -51,7 +51,7 @@ class Document:
     schema_id: str = ""
     source_filename: str = ""
     source_meta: dict = field(default_factory=dict)
-    file_path: Optional[str] = None  # path of the loaded .json or .lbtxt
+    file_path: Optional[str] = None  # path of the loaded .json or .lexa
     dirty: bool = False
 
     # ------------------------------------------------------------------

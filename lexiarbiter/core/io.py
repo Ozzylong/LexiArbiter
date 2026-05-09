@@ -2,14 +2,14 @@
 
 Three file types:
 
-* `.json`   - Raw judicial open-data file. We read the `JFULL` field for the
-              full judgment text plus a few metadata fields.
-* `.lbtxt`  - LexiArbiter's own work-in-progress format. JSON content but with
-              a distinct extension so it is easy to tell apart from raw data.
-              Holds the full original text + structured annotation list, so
-              another annotator can pick up where you left off.
-* `.txt`    - Final model-ready export, matching the wrapper format used by
-              the user's MTL pipeline (e.g. ``<P>大前提,非第一人稱|...</P>``).
+* `.json`  - Raw judicial open-data file. We read the `JFULL` field for the
+             full judgment text plus a few metadata fields.
+* `.lexa`  - LexiArbiter's own work-in-progress format. JSON content but with
+             a distinct extension so it is easy to tell apart from raw data.
+             Holds the full original text + structured annotation list, so
+             another annotator can pick up where you left off.
+* `.txt`   - Final model-ready export, matching the wrapper format used by
+             the user's MTL pipeline (e.g. ``<P>大前提,非第一人稱|...</P>``).
 """
 
 from __future__ import annotations
@@ -26,7 +26,7 @@ from .models import Annotation, Document
 log = logging.getLogger(__name__)
 
 
-LBTXT_VERSION = 1
+LEXA_VERSION = 1
 
 
 # ---------------------------------------------------------------------------
@@ -66,14 +66,14 @@ def load_judicial_json(path: Path | str) -> Document:
     )
 
 
-def load_lbtxt(path: Path | str) -> Document:
+def load_lexa(path: Path | str) -> Document:
     """Load a LexiArbiter work-in-progress file."""
     path = Path(path)
-    log.info("載入 lbtxt：%s", path)
+    log.info("載入 lexa：%s", path)
     with open(path, "r", encoding="utf-8") as f:
         data = json.load(f)
-    if data.get("format") != "lbtxt":
-        raise ValueError("檔案不是 LexiArbiter 的 .lbtxt 格式")
+    if data.get("format") != "lexa":
+        raise ValueError("檔案不是 LexiArbiter 的 .lexa 格式")
 
     text = data.get("text", "")
     anns = [Annotation.from_dict(a) for a in data.get("annotations", [])]
@@ -94,30 +94,30 @@ def load_any(path: Path | str) -> Document:
     """Dispatch on extension."""
     path = Path(path)
     suffix = path.suffix.lower()
-    if suffix == ".lbtxt":
-        return load_lbtxt(path)
+    if suffix == ".lexa":
+        return load_lexa(path)
     if suffix == ".json":
         return load_judicial_json(path)
     raise ValueError(f"不支援的檔案類型：{suffix}")
 
 
 # ---------------------------------------------------------------------------
-# Save .lbtxt
+# Save .lexa
 # ---------------------------------------------------------------------------
 
-def save_lbtxt(doc: Document, path: Path | str, schema: AnnotationMode,
-               update_doc_state: bool = True) -> None:
-    """寫入 .lbtxt。
+def save_lexa(doc: Document, path: Path | str, schema: AnnotationMode,
+              update_doc_state: bool = True) -> None:
+    """寫入 .lexa。
 
     update_doc_state=False 時不更動 doc.file_path / dirty / schema_id，
     供 autosave、emergency 之類的「旁路存檔」使用——這些寫法不應該讓
     使用者看到的「未儲存」狀態消失。
     """
     path = Path(path)
-    log.info("儲存 lbtxt：%s（標註數：%d）", path, len(doc.annotations))
+    log.info("儲存 lexa：%s（標註數：%d）", path, len(doc.annotations))
     payload = {
-        "format": "lbtxt",
-        "version": LBTXT_VERSION,
+        "format": "lexa",
+        "version": LEXA_VERSION,
         "schema": schema.id,
         "source": {
             "filename": doc.source_filename,

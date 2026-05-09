@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-LexiArbiter is a PySide6 desktop GUI for annotating Taiwanese judicial judgments to produce multi-task-learning (MTL) training data. It reads judicial open-data JSON (extracts the `JFULL` field), lets users highlight character spans with multiple labels at once, exports model-ready `.txt` (`<P>tag1,tag2|text</P>`) and saves in-progress work as `.lbtxt`. This is a manual annotation tool — no LLM/API calls, no database, no network. PySide6 is the only runtime dependency.
+LexiArbiter is a PySide6 desktop GUI for annotating Taiwanese judicial judgments to produce multi-task-learning (MTL) training data. It reads judicial open-data JSON (extracts the `JFULL` field), lets users highlight character spans with multiple labels at once, exports model-ready `.txt` (`<P>tag1,tag2|text</P>`) and saves in-progress work as `.lexa`. This is a manual annotation tool — no LLM/API calls, no database, no network. PySide6 is the only runtime dependency.
 
 The README and most UI strings, log messages, and code comments are in Traditional Chinese — preserve the Chinese strings when editing, they are user-facing.
 
@@ -38,7 +38,7 @@ Layering inside `lexiarbiter/`:
 
 - `core/` — pure logic, no Qt imports.
   - `models.py` — `Annotation`, `Document` dataclasses.
-  - `io.py` — load/save `.json` / `.lbtxt` / `.txt` (`load_any`, `load_judicial_json`, `load_lbtxt`, `save_lbtxt`, `export_txt`).
+  - `io.py` — load/save `.json` / `.lexa` / `.txt` (`load_any`, `load_judicial_json`, `load_lexa`, `save_lexa`, `export_txt`).
   - `config.py` — `AnnotationMode`, `GroupDef`, `LabelDef`, `UserPreferences`, plus `app_root()`.
   - `logger.py` — logging setup and `install_exception_hook`.
 - `widgets/` — Qt UI.
@@ -54,19 +54,19 @@ Configs live in `configs/` as hand-editable JSON (not Python):
 
 Central data flow for a single file annotation cycle:
 
-1. `MainWindow.action_open()` → `io.load_any(path)` dispatches by extension to `load_judicial_json` (extracts `JFULL`) or `load_lbtxt` (deserializes prior progress).
+1. `MainWindow.action_open()` → `io.load_any(path)` dispatches by extension to `load_judicial_json` (extracts `JFULL`) or `load_lexa` (deserializes prior progress).
 2. `AnnotationEditor.attach(doc, mode, prefs)` normalizes `\r\n` → `\n` for Qt display, builds an `_OffsetMap`, paints highlights.
 3. User selects text → `MainWindow.apply_label(group_id, label_id)` builds/updates an `Annotation` (12-char UUID, `start` / `end` / `labels{group_id: label_id}`), handles overlap (prompts user to delete overlappers), marks `Document.dirty`, refreshes highlights.
-4. Save with `io.save_lbtxt` (JSON with full text + annotations) or export with `io.export_txt` (formats per `mode.export` config: wrapper, separators, tag order).
+4. Save with `io.save_lexa` (JSON with full text + annotations) or export with `io.export_txt` (formats per `mode.export` config: wrapper, separators, tag order).
 
 ## Non-obvious things to know
 
 - **Storage-vs-display offset duality.** Annotation `start` / `end` are always offsets into the *original* text with `\r\n` line endings, but Qt displays normalized `\n`. Code that reads cursor positions from the widget must convert through `_OffsetMap` (`lexiarbiter/widgets/editor.py`) before touching `Annotation`. Don't "fix" the offsets to match Qt — the persistence format depends on storage offsets.
 - **`configs/` resolution differs between source and frozen exe.** See `app_root()` in `lexiarbiter/core/config.py`. From source it's the project root; from the PyInstaller exe it's `Path(sys.executable).parent`. If you change config-loading, test both paths.
-- **`schema_id` round-trip.** `.lbtxt` files embed the mode `id` they were saved under. Loading a `.lbtxt` whose `schema_id` differs from the active mode prompts the user to switch — that's intentional, not a bug.
-- **Crash safety.** `install_exception_hook(win.emergency_save)` in `main.py` writes a `.crash_backup.lbtxt` next to the active file on uncaught exceptions. Don't remove the hook when refactoring `main.py`.
+- **`schema_id` round-trip.** `.lexa` files embed the mode `id` they were saved under. Loading a `.lexa` whose `schema_id` differs from the active mode prompts the user to switch — that's intentional, not a bug.
+- **Crash safety.** `install_exception_hook(win.emergency_save)` in `main.py` writes a `.crash_backup.lexa` next to the active file on uncaught exceptions. Don't remove the hook when refactoring `main.py`.
 - **Three file extensions, three roles** — keep them straight:
   - `.json` — upstream judicial open-data input (read-only from our perspective).
-  - `.lbtxt` — our progress format (JSON internally; full text + annotations for relay annotation between users).
+  - `.lexa` — our progress format (JSON internally; full text + annotations for relay annotation between users).
   - `.txt` — model-ready export, one `<P>tag1,tag2|text</P>` per paragraph.
 - **No tests exist.** When adding logic, the natural seams to unit-test are `core/io.py` (round-trip serialization, export formatting) and `core/models.py` (offset math, overlap detection). UI is GUI-tested manually.
