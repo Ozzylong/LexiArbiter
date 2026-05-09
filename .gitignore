@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+*.pyo
+*.spec
+build/
+dist/
+.venv/
+venv/
+.idea/
+.vscode/
+*.lbtxt
+!example/*.lbtxt
+example/
