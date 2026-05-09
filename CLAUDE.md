@@ -8,6 +8,12 @@ LexiArbiter is a PySide6 desktop GUI for annotating Taiwanese judicial judgments
 
 The README and most UI strings, log messages, and code comments are in Traditional Chinese — preserve the Chinese strings when editing, they are user-facing.
 
+## Critical Rules that MUST follow
+- Use Traditional Chinese(TW) to interact with user (include but not limited to answer user's question, providing commit message)
+- After the code is modified, provide commit message to user
+- DO NOT add any program function or code that user are not permitted
+- If there is some change of the program function/code, remember to clean up the zombie code that are no longer needed, if you are not sure about it, ask user how to handle it.
+
 ## Common commands
 
 Run from source (Windows / PowerShell):
