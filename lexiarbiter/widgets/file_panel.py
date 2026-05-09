@@ -72,8 +72,9 @@ class FilePanel(QWidget):
         self._lists: dict[str, QListWidget] = {}
         for ext in _TAB_ORDER:
             lst = QListWidget()
+            # itemActivated 已涵蓋雙擊與 Enter；不要再連 itemDoubleClicked，
+            # 否則開檔後 refresh() 清空清單時，第二次派送會收到 None item。
             lst.itemActivated.connect(self._on_item_activated)
-            lst.itemDoubleClicked.connect(self._on_item_activated)
             self.tabs.addTab(lst, _TAB_LABELS[ext])
             self._lists[ext] = lst
 
@@ -239,7 +240,11 @@ class FilePanel(QWidget):
 
     # ------------------------------------------------------------ handlers
 
-    def _on_item_activated(self, item: QListWidgetItem):
+    def _on_item_activated(self, item: Optional[QListWidgetItem]):
+        # item 可能是 None：同一次雙擊在開檔後 refresh() 把原 item 銷毀，
+        # 之後 Qt 仍可能派送陳舊訊號。
+        if item is None:
+            return
         path = item.data(Qt.UserRole)
         if path:
             self.file_open_requested.emit(path)
