@@ -832,6 +832,16 @@ class MainWindow(QMainWindow):
             "下列資訊已複製到剪貼簿，請連同 log 檔一起貼給開發者：\n\n" + text,
         )
 
+    def _show_about(self):
+        QMessageBox.about(
+            self,
+            f"關於 {__app_name__}",
+            f"<h3>{__app_name__} {__version__}</h3>"
+            "<p>法律文件多任務標註工具（MTL 訓練資料用）。</p>"
+            "<p>讀取司法判決開放資料 JSON，輸出 <code>.lbtxt</code> 進度檔與 "
+            "<code>.txt</code> 模型訓練檔。</p>",
+        )
+
     # ------------------------------------------------------------ events
 
     def emergency_save(self) -> None:
