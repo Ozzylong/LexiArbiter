@@ -333,6 +333,29 @@ class MainWindow(QMainWindow):
             self.clear_group_in_selection(group_id)
         return handler
 
+    def _confirm_replace_existing_group_label(
+        self, ann: Annotation, group_id: str, new_label_id: str
+    ) -> bool:
+        """若 ann 在 group_id 已有不同 label，跳出確認對話框。
+        回傳 True 表示可繼續覆寫；False 表示使用者取消。
+        純新增、重複套用同 label 一律放行不打擾。
+        """
+        existing = ann.labels.get(group_id)
+        if existing is None or existing == new_label_id:
+            return True
+        group = next((g for g in self.mode.groups if g.id == group_id), None)
+        if group is None:
+            return True
+        old_name = next((l.name for l in group.labels if l.id == existing), existing)
+        new_name = next((l.name for l in group.labels if l.id == new_label_id), new_label_id)
+        reply = QMessageBox.question(
+            self, "重疊處理",
+            f"此範圍在「{group.name}」群組已標為「{old_name}」，\n"
+            f"要改為「{new_name}」嗎？",
+            QMessageBox.Yes | QMessageBox.Cancel,
+        )
+        return reply == QMessageBox.Yes
+
     def apply_label(self, group_id: str, label_id: str):
         if self.doc is None:
             self.status.showMessage("請先開啟一個檔案再進行標註。", 4000)
@@ -345,6 +368,8 @@ class MainWindow(QMainWindow):
                     return
                 ann = self.doc.find_annotation(ann_id)
                 if ann is None:
+                    return
+                if not self._confirm_replace_existing_group_label(ann, group_id, label_id):
                     return
                 ann.labels[group_id] = label_id
                 self.doc.dirty = True
@@ -359,6 +384,8 @@ class MainWindow(QMainWindow):
                         if a.start == s and a.end == e]
             if existing:
                 ann = existing[0]
+                if not self._confirm_replace_existing_group_label(ann, group_id, label_id):
+                    return
                 ann.labels[group_id] = label_id
             else:
                 # 跨群組重疊應允許並存（每個群組是獨立任務）；只在「同群組」
