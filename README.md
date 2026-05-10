@@ -46,7 +46,7 @@ python build_exe.py
 
 | 群組 | 角色 | 類別 | 預設快速鍵 |
 | --- | --- | --- | --- |
-| 論證類別 (主任務) | primary | 心證其他 / 大前提 / 小前提 / 結論 | Ctrl+1 ~ Ctrl+4 |
+| 論證類別 (主任務) | primary | 程序 / 事實 / 大前提 / 小前提 / 心證其他 / 結論 | Ctrl+1 ~ Ctrl+6 |
 | 人稱 (輔助任務) | auxiliary | 第一人稱 / 非第一人稱 | Ctrl+Shift+1 / Ctrl+Shift+2 |
 
 ## 標註模式設定範例
