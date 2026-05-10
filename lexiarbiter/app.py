@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import sys
 from pathlib import Path
 from typing import Optional
@@ -37,6 +38,27 @@ from .widgets.file_panel import FilePanel
 # data loss (Qt/C++ crash, OOM, power loss) is bounded, long enough not to
 # pester the disk while the user is mid-annotation.
 _AUTOSAVE_INTERVAL_MS = 60_000
+
+# Autosave 檔名規則：``<base>.autosave.<timestamp>.lexa``。
+# 第二段 ``\.autosave`` 後的 ``(?:\.[^.]+)?`` 用來相容舊版無時間戳的
+# ``<base>.autosave.lexa``，遷移期間還能正確辨識並一起做修剪 / 清理。
+_AUTOSAVE_RE = re.compile(
+    r"^(?P<base>.+)\.autosave(?:\.[^.]+)?\.lexa$",
+    re.IGNORECASE,
+)
+
+
+def _is_autosave_name(name: str) -> bool:
+    """檔名是否為 autosave 產物（含舊版無時間戳格式）。"""
+    return bool(_AUTOSAVE_RE.match(name))
+
+
+def _autosave_base_path(p: Path) -> Path:
+    """把 autosave 檔還原成它對應的『原檔』.lexa 路徑；非 autosave 原樣返回。"""
+    m = _AUTOSAVE_RE.match(p.name)
+    if m:
+        return p.with_name(m.group("base") + ".lexa")
+    return p
 
 
 # ---------------------------------------------------------------------------
@@ -458,6 +480,8 @@ class MainWindow(QMainWindow):
         if reply == QMessageBox.Save:
             return self.action_save()
         if reply == QMessageBox.Discard:
+            # 使用者主動捨棄 → autosave 也視為過期，避免下次開檔被誤報為「較新存檔」。
+            self._cleanup_autosave()
             return True
         return False
 
@@ -786,31 +810,78 @@ class MainWindow(QMainWindow):
     def _compute_autosave_path(self) -> Optional[Path]:
         """目前 doc 對應的 autosave 檔位置。
 
-        有 file_path 時放在原檔旁邊（`<file>.autosave.lexa`）；
-        尚未存過的新檔則退而求其次寫到 log 資料夾，避免完全沒備份。
+        命名格式：``<base>.autosave.YYYYMMDD_HHMMSS.lexa``，每次呼叫產生
+        新時間戳；保留份數由 :meth:`_prune_autosaves` 控制。
+
+        有 file_path 時放在原檔旁邊；尚未存過的新檔則退而求其次寫到
+        log 資料夾，避免完全沒備份。若 ``file_path`` 本身指向某個
+        autosave 檔（例如使用者透過開檔對話框直接挑了 autosave），會
+        先還原成原 base 再加時間戳，避免 ``.autosave.autosave...`` 疊加。
         """
         if self.doc is None:
             return None
+        from datetime import datetime
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         if self.doc.file_path:
-            return Path(self.doc.file_path).with_suffix(".autosave.lexa")
+            base = _autosave_base_path(Path(self.doc.file_path))
+            return base.with_name(f"{base.stem}.autosave.{stamp}.lexa")
         d = current_log_dir()
         if d is None:
             return None
-        return d / "untitled.autosave.lexa"
+        return d / f"untitled.autosave.{stamp}.lexa"
+
+    def _list_autosaves_for(self, base_lexa: Path) -> list[Path]:
+        """列出該 base .lexa 對應的所有 autosave 檔（含舊版無時間戳格式）。"""
+        parent = base_lexa.parent
+        if not parent.exists():
+            return []
+        base_stem = base_lexa.stem
+        out: list[Path] = []
+        try:
+            entries = list(parent.iterdir())
+        except OSError:
+            return []
+        for p in entries:
+            if not p.is_file() or not p.name.lower().endswith(".lexa"):
+                continue
+            m = _AUTOSAVE_RE.match(p.name)
+            if m and m.group("base") == base_stem:
+                out.append(p)
+        return out
+
+    def _prune_autosaves(self, base_lexa: Path, keep: int = 2) -> None:
+        """只保留最新 ``keep`` 份，其餘刪除。失敗只記 log 不拋例外。"""
+        files = self._list_autosaves_for(base_lexa)
+        try:
+            files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+        except OSError:
+            return
+        for old in files[keep:]:
+            try:
+                old.unlink()
+                log.info("已刪除舊 autosave：%s", old)
+            except OSError:
+                log.warning("刪除舊 autosave 失敗：%s", old, exc_info=True)
 
     def _autosave_companion(self, src_path: Path) -> Optional[Path]:
-        """若 src_path 旁邊有比它新的 autosave 檔，回傳其路徑。
+        """若 src_path 旁邊有比它新的 autosave 檔，回傳最新那份。
 
         autosave 檔本身不會再去找 companion（避免遞迴）。
         """
-        if src_path.name.endswith(".autosave.lexa"):
+        if _is_autosave_name(src_path.name):
             return None
-        autosave = src_path.with_suffix(".autosave.lexa")
+        if not src_path.exists():
+            return None
+        base = _autosave_base_path(src_path)  # 通常 == src_path
+        candidates = self._list_autosaves_for(base)
+        if not candidates:
+            return None
         try:
-            if not autosave.exists() or not src_path.exists():
-                return None
-            if autosave.stat().st_mtime > src_path.stat().st_mtime:
-                return autosave
+            src_mtime = src_path.stat().st_mtime
+            candidates.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+            newest = candidates[0]
+            if newest.stat().st_mtime > src_mtime:
+                return newest
         except OSError:
             return None
         return None
@@ -828,18 +899,43 @@ class MainWindow(QMainWindow):
             iomod.save_lexa(self.doc, path, self.mode, update_doc_state=False)
             self._last_autosave_path = path
             log.info("autosave: %s", path)
+            # 寫入後立刻修剪，保證磁碟上同 base 至多 2 份。
+            if self.doc.file_path:
+                base = _autosave_base_path(Path(self.doc.file_path))
+                self._prune_autosaves(base, keep=2)
         except Exception:
             log.error("autosave 失敗：%s", path, exc_info=True)
 
     def _cleanup_autosave(self):
-        """正式存檔成功後刪除 autosave，避免下次開檔誤判。"""
-        p = self._last_autosave_path
-        if p is not None and p.exists():
+        """正式存檔成功 / 使用者捨棄變更後，把該 doc 對應的所有 autosave 都清掉。"""
+        if self.doc is not None and self.doc.file_path:
+            base = _autosave_base_path(Path(self.doc.file_path))
+            # 防呆：若使用者透過 QFileDialog 直接開了某個 autosave 檔，
+            # doc.file_path 就會指向 autosave 本身——這時不要把它一起刪掉。
             try:
-                p.unlink()
-                log.info("已刪除 autosave：%s", p)
+                current = Path(self.doc.file_path).resolve()
             except OSError:
-                log.warning("刪除 autosave 失敗：%s", p, exc_info=True)
+                current = None
+            for old in self._list_autosaves_for(base):
+                try:
+                    if current is not None and old.resolve() == current:
+                        continue
+                except OSError:
+                    pass
+                try:
+                    old.unlink()
+                    log.info("已清除 autosave：%s", old)
+                except OSError:
+                    log.warning("刪除 autosave 失敗：%s", old, exc_info=True)
+        else:
+            # 沒有 file_path（未存過的新檔）→ 用 _last_autosave_path 兜底
+            p = self._last_autosave_path
+            if p is not None and p.exists():
+                try:
+                    p.unlink()
+                    log.info("已清除 autosave：%s", p)
+                except OSError:
+                    log.warning("刪除 autosave 失敗：%s", p, exc_info=True)
         self._last_autosave_path = None
 
     # ----------------------------------------------------------- 診斷

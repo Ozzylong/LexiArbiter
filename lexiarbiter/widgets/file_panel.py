@@ -152,6 +152,11 @@ class FilePanel(QWidget):
             if not entry.is_file():
                 continue
             ext = entry.suffix.lower()
+            # 隱藏 autosave 產物（含舊版 *.autosave.lexa 與新版
+            # *.autosave.<timestamp>.lexa）。它們是 crash backup 用，
+            # 不應該讓使用者誤點而把 doc.file_path 指到 autosave 檔。
+            if ext == ".lexa" and ".autosave." in entry.name:
+                continue
             if ext in by_ext:
                 by_ext[ext].append(entry)
 
