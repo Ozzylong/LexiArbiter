@@ -16,9 +16,9 @@ from PySide6.QtGui import (
     QPixmap, QShortcut,
 )
 from PySide6.QtWidgets import (
-    QApplication, QDialog, QFileDialog, QHBoxLayout, QLabel, QMainWindow,
-    QMenu, QMessageBox, QPushButton, QSplitter, QStatusBar, QToolBar,
-    QVBoxLayout, QWidget,
+    QApplication, QFileDialog, QHBoxLayout, QLabel, QMainWindow, QMenu,
+    QMessageBox, QPushButton, QSplitter, QStatusBar, QToolBar, QVBoxLayout,
+    QWidget,
 )
 
 from . import __app_name__, __version__
@@ -135,33 +135,23 @@ class MainWindow(QMainWindow):
         self.status_mode_label = QLabel()
         self.status.addPermanentWidget(self.status_mode_label)
 
-    # 對應 prefs.shortcut_overrides._app 的鍵 → MainWindow QAction 屬性名與預設值。
-    # 集中於此處，使 settings dialog 與 _apply_app_shortcuts 可以遍歷同一份來源。
-    _APP_SHORTCUT_BINDINGS: list[tuple[str, str, str, str]] = [
-        # (attr, name_in_prefs, default_key, 中文顯示名稱)
-        ("act_open",        "open",              "Ctrl+O",       "開啟檔案"),
-        ("act_open_folder", "open_folder",       "Ctrl+Shift+O", "開啟資料夾"),
-        ("act_save",        "save",              "Ctrl+S",       "儲存標註進度"),
-        ("act_export",      "export_txt",        "Ctrl+E",       "匯出 .txt"),
-        ("act_remove_ann",  "remove_annotation", "Ctrl+D",       "刪除游標處標註"),
-        ("act_next_file",   "next_file",         "Alt+Down",     "下一個檔案"),
-        ("act_prev_file",   "prev_file",         "Alt+Up",       "上一個檔案"),
-    ]
-
     def _build_menu(self):
         mb = self.menuBar()
 
         # File
         m_file = mb.addMenu("檔案(&F)")
         self.act_open = QAction("開啟檔案…", self)
+        self.act_open.setShortcut(self.prefs.app_shortcut("open", "Ctrl+O"))
         self.act_open.triggered.connect(self.action_open)
         m_file.addAction(self.act_open)
 
         self.act_open_folder = QAction("開啟資料夾…", self)
+        self.act_open_folder.setShortcut(self.prefs.app_shortcut("open_folder", "Ctrl+Shift+O"))
         self.act_open_folder.triggered.connect(self.action_open_folder)
         m_file.addAction(self.act_open_folder)
 
         self.act_save = QAction("儲存標註進度 (.lexa)", self)
+        self.act_save.setShortcut(self.prefs.app_shortcut("save", "Ctrl+S"))
         self.act_save.triggered.connect(self.action_save)
         m_file.addAction(self.act_save)
 
@@ -171,14 +161,9 @@ class MainWindow(QMainWindow):
 
         m_file.addSeparator()
         self.act_export = QAction("匯出模型用 .txt…", self)
+        self.act_export.setShortcut(self.prefs.app_shortcut("export_txt", "Ctrl+E"))
         self.act_export.triggered.connect(self.action_export)
         m_file.addAction(self.act_export)
-
-        m_file.addSeparator()
-        self.act_settings = QAction("選項…", self)
-        self.act_settings.setShortcut("Ctrl+,")
-        self.act_settings.triggered.connect(self.action_settings)
-        m_file.addAction(self.act_settings)
 
         m_file.addSeparator()
         self.act_quit = QAction("離開", self)
@@ -189,30 +174,41 @@ class MainWindow(QMainWindow):
         # Edit
         m_edit = mb.addMenu("編輯(&E)")
         self.act_remove_ann = QAction("刪除游標處標註", self)
+        self.act_remove_ann.setShortcut(self.prefs.app_shortcut("remove_annotation", "Ctrl+D"))
         self.act_remove_ann.triggered.connect(self.action_remove_annotation_at_cursor)
         m_edit.addAction(self.act_remove_ann)
 
         m_edit.addSeparator()
         self.act_next_file = QAction("下一個檔案", self)
+        self.act_next_file.setShortcut(self.prefs.app_shortcut("next_file", "Alt+Down"))
         self.act_next_file.triggered.connect(lambda: self.file_panel.select_relative(1))
         m_edit.addAction(self.act_next_file)
 
         self.act_prev_file = QAction("上一個檔案", self)
+        self.act_prev_file.setShortcut(self.prefs.app_shortcut("prev_file", "Alt+Up"))
         self.act_prev_file.triggered.connect(lambda: self.file_panel.select_relative(-1))
         m_edit.addAction(self.act_prev_file)
-
-        # 集中套用 app shortcut，使 reload 後可以重用同一份程式碼
-        self._apply_app_shortcuts()
 
         # Annotate
         self.menu_annotate = mb.addMenu("標註(&A)")
         self._populate_annotate_menu()
 
         # Mode
-        self.menu_mode = mb.addMenu("標註模式(&M)")
+        m_mode = mb.addMenu("標註模式(&M)")
         self.mode_action_group = QActionGroup(self)
         self.mode_action_group.setExclusive(True)
-        self._populate_mode_menu()
+        for m in self.modes:
+            act = QAction(m.name, self, checkable=True)
+            act.setData(m.id)
+            if m.id == self.mode.id:
+                act.setChecked(True)
+            act.triggered.connect(self._on_mode_action)
+            self.mode_action_group.addAction(act)
+            m_mode.addAction(act)
+        m_mode.addSeparator()
+        act_open_modes_dir = QAction("開啟模式資料夾", self)
+        act_open_modes_dir.triggered.connect(self._open_modes_dir)
+        m_mode.addAction(act_open_modes_dir)
 
         # Help
         m_help = mb.addMenu("說明(&H)")
@@ -309,40 +305,6 @@ class MainWindow(QMainWindow):
     def _setup_app_shortcuts(self):
         # menu actions already carry shortcuts; nothing additional here.
         pass
-
-    def _apply_app_shortcuts(self):
-        """依 prefs 設定所有 app-level QAction 的快捷鍵。
-
-        初始化時由 _build_menu 呼叫一次；偏好設定變更後也由 _reapply_prefs_to_ui 呼叫，
-        集中於同一處方便維護。act_save_as / act_quit / act_settings 維持硬編碼快捷鍵。
-        """
-        for attr, name, default, _label in self._APP_SHORTCUT_BINDINGS:
-            action = getattr(self, attr, None)
-            if action is None:
-                continue
-            action.setShortcut(self.prefs.app_shortcut(name, default))
-
-    def _populate_mode_menu(self):
-        """重建「標註模式」選單與其 QActionGroup。
-
-        初始化、以及在「選項」對話框中重新掃描 annotation_modes 資料夾後都會呼叫。
-        """
-        self.menu_mode.clear()
-        for a in list(self.mode_action_group.actions()):
-            self.mode_action_group.removeAction(a)
-            a.setParent(None)
-        for m in self.modes:
-            act = QAction(m.name, self, checkable=True)
-            act.setData(m.id)
-            if m.id == self.mode.id:
-                act.setChecked(True)
-            act.triggered.connect(self._on_mode_action)
-            self.mode_action_group.addAction(act)
-            self.menu_mode.addAction(act)
-        self.menu_mode.addSeparator()
-        act_open_modes_dir = QAction("開啟模式資料夾", self)
-        act_open_modes_dir.triggered.connect(self._open_modes_dir)
-        self.menu_mode.addAction(act_open_modes_dir)
 
     def _setup_label_shortcuts(self):
         # Remove previous shortcut objects when switching mode.
@@ -724,44 +686,6 @@ class MainWindow(QMainWindow):
             os.system(f"open '{d}'")
         else:
             os.system(f"xdg-open '{d}'")
-
-    # -------------------------------------------------------- settings dialog
-
-    def action_settings(self):
-        """開啟「選項」對話框，使用者按下儲存後即時套用變更。"""
-        from .widgets.settings_dialog import SettingsDialog
-        dlg = SettingsDialog(self.prefs, self.mode, self.modes, self)
-        if dlg.exec() != QDialog.Accepted:
-            return
-
-        # 1) 重新掃描的話，更新 self.modes 與「標註模式」選單
-        if dlg.did_rescan:
-            self.modes = dlg.refreshed_modes
-            self._populate_mode_menu()
-
-        # 2) 若使用者選了切換 active mode，走既有完整流程
-        target_id = dlg.pending_active_mode_id
-        if target_id and target_id != self.mode.id:
-            self._switch_mode(target_id, persist=True)
-            return
-
-        # 3) 否則僅套用偏好變更（字型、行距、快捷鍵）
-        self._reapply_prefs_to_ui()
-
-    def _reapply_prefs_to_ui(self):
-        """套用 prefs 變更到 UI（不換 mode）。"""
-        # 重新套用 app shortcut
-        self._apply_app_shortcuts()
-        # 重新套用 label shortcut（顯示 + 全域 QShortcut）
-        self._populate_annotate_menu()
-        self._populate_label_buttons()
-        self._setup_label_shortcuts()
-        # 字型 / 行距
-        if self.doc is not None:
-            self.editor.attach(self.doc, self.mode, self.prefs)
-        else:
-            self.editor.apply_prefs_only(self.prefs)
-        self._refresh_status()
 
     # ------------------------------------------------------------ misc UI
 

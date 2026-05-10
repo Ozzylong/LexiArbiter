@@ -129,13 +129,6 @@ class AnnotationEditor(QTextEdit):
         self._apply_line_spacing(prefs.ui.get("line_spacing", 1.4))
         self.refresh_highlights()
 
-    def apply_prefs_only(self, prefs: UserPreferences):
-        """在沒有開檔的情況下套用偏好設定（僅字型生效，行距等開檔後由 attach 處理）。"""
-        self._prefs = prefs
-        font = QFont(prefs.ui.get("font_family", "Microsoft JhengHei UI"),
-                     prefs.ui.get("font_size", 14))
-        self.setFont(font)
-
     def _apply_line_spacing(self, factor: float):
         if not self._doc:
             return
