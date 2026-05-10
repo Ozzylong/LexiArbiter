@@ -9,12 +9,12 @@
       "role": "primary",
       "description": "主任務：判斷該段文字屬於論證鏈的哪一環節。",
       "labels": [
-        {"id": "procedure",      "name": "程序",    "tag": "程序",         "color": "#A5D6A7", "shortcut": "Ctrl+1"},
-        {"id": "fact",           "name": "事實",    "tag": "事實",         "color": "#FFB74D", "shortcut": "Ctrl+2"},
-        {"id": "major_premise",  "name": "大前提",  "tag": "大前提",       "color": "#FFD54F", "shortcut": "Ctrl+3"},
-        {"id": "minor_premise",  "name": "小前提",  "tag": "小前提",       "color": "#64B5F6", "shortcut": "Ctrl+4"},
-        {"id": "judgment_other", "name": "心證其他", "tag": "心證其他部份", "color": "#B0BEC5", "shortcut": "Ctrl+5"},
-        {"id": "conclusion",     "name": "結論",    "tag": "結論",         "color": "#EF9A9A", "shortcut": "Ctrl+6"}
+        {"id": "procedure",      "name": "程序",    "tag": "程序",         "color": "#26A69A", "shortcut": "Ctrl+1"},
+        {"id": "fact",           "name": "事實",    "tag": "事實",         "color": "#FF7043", "shortcut": "Ctrl+2"},
+        {"id": "major_premise",  "name": "大前提",  "tag": "大前提",       "color": "#FFCA28", "shortcut": "Ctrl+3"},
+        {"id": "minor_premise",  "name": "小前提",  "tag": "小前提",       "color": "#42A5F5", "shortcut": "Ctrl+4"},
+        {"id": "judgment_other", "name": "心證其他", "tag": "心證其他部份", "color": "#AB47BC", "shortcut": "Ctrl+5"},
+        {"id": "conclusion",     "name": "結論",    "tag": "結論",         "color": "#EF5350", "shortcut": "Ctrl+6"}
       ]
     },
     {

@@ -19,8 +19,8 @@ log = logging.getLogger(__name__)
 
 from PySide6.QtCore import Qt, QPoint, Signal
 from PySide6.QtGui import (
-    QAction, QColor, QKeySequence, QShortcut, QTextCharFormat, QTextCursor,
-    QFont, QPalette,
+    QAction, QColor, QGuiApplication, QKeySequence, QShortcut, QTextCharFormat,
+    QTextCursor, QFont, QPalette,
 )
 from PySide6.QtWidgets import QMenu, QTextEdit
 
@@ -79,6 +79,23 @@ def _hex_to_qcolor(value: Optional[str], alpha: int = 110) -> Optional[QColor]:
     return c
 
 
+def _is_dark_palette(widget) -> bool:
+    """判斷 widget 目前是否處於深色背景主題。
+
+    優先讀 Qt 6.5+ 的 ``styleHints().colorScheme()``；舊版或回報 Unknown 時
+    退回以 ``QPalette.Base`` 亮度判斷（< 128 視為深色）。
+    """
+    try:
+        scheme = QGuiApplication.styleHints().colorScheme()
+        if scheme == Qt.ColorScheme.Dark:
+            return True
+        if scheme == Qt.ColorScheme.Light:
+            return False
+    except (AttributeError, RuntimeError):
+        pass
+    return widget.palette().color(QPalette.Base).lightness() < 128
+
+
 class AnnotationEditor(QTextEdit):
     """Read-only-ish text view that renders annotations as background highlights.
 
@@ -108,6 +125,15 @@ class AnnotationEditor(QTextEdit):
         self._prefs: Optional[UserPreferences] = None
         self._omap: Optional[_OffsetMap] = None
         self._context_menu_builder = None
+
+        # 系統深 / 淺色主題切換時自動重繪。Qt 6.5+ 才有此 signal，
+        # 舊版直接 fallback 到「重啟程式才生效」。
+        try:
+            QGuiApplication.styleHints().colorSchemeChanged.connect(
+                lambda _scheme: self.refresh_highlights()
+            )
+        except (AttributeError, RuntimeError):
+            pass
 
     # ------------------------------------------------------------------ setup
 
@@ -188,9 +214,19 @@ class AnnotationEditor(QTextEdit):
 
     def _apply_format_for_labels(self, fmt: QTextCharFormat, ann: Annotation):
         """First group with a non-null color drives the background.
-        Other group labels are reflected via underline style."""
+        Other group labels are reflected via underline style.
+
+        渲染參數依當下 palette（深 / 淺）自動切換：深色模式提高背景 alpha 並
+        強制反白標註內文字色，底線色則固定取近黑或近白以保證對比。
+        """
         if self._mode is None:
             return
+        dark = _is_dark_palette(self)
+        bg_alpha = 180 if dark else 130
+        fallback_alpha = 90 if dark else 50
+        # 底線色一律取與編輯器背景對比最強的近黑 / 近白，不再從主背景色 darker/lighter 派生
+        underline_default = QColor("#ECEFF1") if dark else QColor("#1B1B1B")
+
         bg_color: Optional[QColor] = None
         underline_style = QTextCharFormat.NoUnderline
         underline_color: Optional[QColor] = None
@@ -204,33 +240,30 @@ class AnnotationEditor(QTextEdit):
             if lb is None:
                 continue
             tooltip_parts.append(f"{g.name}：{lb.name}")
-            color = _hex_to_qcolor(lb.color, alpha=110)
+            color = _hex_to_qcolor(lb.color, alpha=bg_alpha)
             if color is not None and bg_color is None:
                 bg_color = color
             elif color is None:
-                # Auxiliary: pick underline style by index in group's labels.
+                # 輔助群組：依該群組內 label 索引選底線樣式。
+                # WaveUnderline / DashDotLine 兩者視覺差異大，在中文字下都不會被誤認為實線。
                 idx = g.labels.index(lb)
                 styles = [
-                    QTextCharFormat.SingleUnderline,
-                    QTextCharFormat.DashUnderline,
-                    QTextCharFormat.DotLine,
-                    QTextCharFormat.WaveUnderline,
+                    QTextCharFormat.WaveUnderline,    # 第一人稱：波浪線（視覺重量大，主關注點）
+                    QTextCharFormat.DashDotLine,      # 非第一人稱：dash-dot（次要層次）
+                    QTextCharFormat.SingleUnderline,  # 預留第三類
+                    QTextCharFormat.DotLine,          # 預留第四類
                 ]
                 underline_style = styles[idx % len(styles)]
-                # Use a darkened version of bg if available, else a deep blue.
-                if bg_color is not None:
-                    deep = QColor(bg_color)
-                    deep.setAlpha(255)
-                    underline_color = deep.darker(160)
-                else:
-                    underline_color = QColor("#1565C0")
+                underline_color = underline_default
 
         if bg_color is None:
-            # No primary color -> faint yellow fallback so the span is still
-            # discoverable, but kept light enough not to drown out the underline.
-            bg_color = _hex_to_qcolor("#FFF59D", alpha=50)
+            # 無主背景色時：淡黃後備，深色模式提高 alpha 讓 span 仍可辨識。
+            bg_color = _hex_to_qcolor("#FFF59D", alpha=fallback_alpha)
 
         fmt.setBackground(bg_color)
+        # 深色模式下標註背景變得不透明度高，強制深色文字色保證閱讀對比。
+        if dark and bg_color is not None:
+            fmt.setForeground(QColor("#1B1B1B"))
         if underline_style != QTextCharFormat.NoUnderline:
             fmt.setUnderlineStyle(underline_style)
             if underline_color is not None:
