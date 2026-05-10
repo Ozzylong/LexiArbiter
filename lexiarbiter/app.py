@@ -12,8 +12,7 @@ log = logging.getLogger(__name__)
 
 from PySide6.QtCore import Qt, QSize, QTimer
 from PySide6.QtGui import (
-    QAction, QActionGroup, QColor, QIcon, QKeySequence, QPainter, QPalette,
-    QPixmap, QShortcut,
+    QAction, QActionGroup, QColor, QIcon, QPainter, QPalette, QPixmap,
 )
 from PySide6.QtWidgets import (
     QApplication, QFileDialog, QHBoxLayout, QLabel, QMainWindow, QMenu,
@@ -96,7 +95,6 @@ class MainWindow(QMainWindow):
         self._build_toolbar()
         self._build_menu()
         self._setup_app_shortcuts()
-        self._setup_label_shortcuts()
         self._build_status_bar()
 
         self._update_actions()
@@ -305,21 +303,6 @@ class MainWindow(QMainWindow):
     def _setup_app_shortcuts(self):
         # menu actions already carry shortcuts; nothing additional here.
         pass
-
-    def _setup_label_shortcuts(self):
-        # Remove previous shortcut objects when switching mode.
-        if hasattr(self, "_label_shortcuts"):
-            for sc in self._label_shortcuts:
-                sc.setParent(None)
-        self._label_shortcuts: list[QShortcut] = []
-        for g in self.mode.groups:
-            for lb in g.labels:
-                key = self.prefs.label_shortcut(g.id, lb.id, lb.shortcut)
-                if not key:
-                    continue
-                sc = QShortcut(QKeySequence(key), self)
-                sc.activated.connect(self._make_label_handler(g.id, lb.id))
-                self._label_shortcuts.append(sc)
 
     # --------------------------------------------------------- annotate ops
 
@@ -701,7 +684,6 @@ class MainWindow(QMainWindow):
                 pass
         self._populate_annotate_menu()
         self._populate_label_buttons()
-        self._setup_label_shortcuts()
         if self.doc is not None:
             self.editor.attach(self.doc, self.mode, self.prefs)
         self._refresh_status()
@@ -737,7 +719,7 @@ class MainWindow(QMainWindow):
                         lb = g.label(lid)
                         if lb:
                             lbl_lines.append(f"{g.name}：{lb.name}")
-                head = QAction("　|　".join(lbl_lines) if lbl_lines else "(無標籤)", self)
+                head = QAction("　|　".join(lbl_lines) if lbl_lines else "(無標籤)", menu)
                 head.setEnabled(False)
                 menu.addAction(head)
                 menu.addSeparator()
@@ -745,19 +727,18 @@ class MainWindow(QMainWindow):
         for g in self.mode.groups:
             sub = menu.addMenu(g.name)
             for lb in g.labels:
-                act = QAction(_swatch_icon(lb.color), lb.name, self)
                 shortcut = self.prefs.label_shortcut(g.id, lb.id, lb.shortcut)
-                if shortcut:
-                    act.setShortcut(shortcut)
+                text = lb.name + (f"\t{shortcut}" if shortcut else "")
+                act = QAction(_swatch_icon(lb.color), text, sub)
                 act.triggered.connect(self._make_label_handler(g.id, lb.id))
                 sub.addAction(act)
             sub.addSeparator()
-            act_clear = QAction(f"清除「{g.name}」", self)
+            act_clear = QAction(f"清除「{g.name}」", sub)
             act_clear.triggered.connect(self._make_clear_group_handler(g.id))
             sub.addAction(act_clear)
 
         menu.addSeparator()
-        act_remove = QAction("刪除此處標註", self)
+        act_remove = QAction("刪除此處標註", menu)
         act_remove.triggered.connect(self.action_remove_annotation_at_cursor)
         if not has_selection and ann_id is None:
             act_remove.setEnabled(False)
