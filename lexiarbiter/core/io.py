@@ -160,64 +160,90 @@ def export_txt(doc: Document, path: Path | str, schema: AnnotationMode) -> dict:
 
     Summary keys: ``written`` (int), ``unannotated_chars`` (int),
     ``partial_count`` (int), ``warnings`` (list[str]).
+
+    演算法以「字元 segment」為單位：先把所有 annotation 的 start/end
+    切成不重疊區段，再對每個區段合併所有覆蓋該區段的 annotation labels。
+    這讓「同範圍多群組」（無論在 .lexa 是用一條多群組 annotation 或多條
+    同 span 各帶一群組來表達）匯出結果一致，達到冪等性。
     """
     path = Path(path)
     log.info("匯出 txt：%s", path)
     exp = schema.export
 
-    sorted_anns = doc.sorted_annotations()
+    text = doc.text
+    n = len(text)
 
-    lines: list[str] = []
+    # 1) 收集 boundary points。
+    points: set[int] = {0, n}
+    for a in doc.annotations:
+        if 0 <= a.start <= n:
+            points.add(a.start)
+        if 0 <= a.end <= n:
+            points.add(a.end)
+    sorted_points = sorted(points)
+
     warnings: list[str] = []
+
+    # 2) 對每個 segment 合併所有覆蓋它的 annotation labels。
+    raw_segments: list[tuple[int, int, dict[str, str]]] = []
+    for i in range(len(sorted_points) - 1):
+        s, e = sorted_points[i], sorted_points[i + 1]
+        if s >= e:
+            continue
+        seg_labels: dict[str, str] = {}
+        for a in doc.annotations:
+            if a.start <= s and e <= a.end:
+                for gid, lid in a.labels.items():
+                    if gid in seg_labels and seg_labels[gid] != lid:
+                        # 同群組衝突理論上不會發生（apply_label 已禁止），
+                        # 但讀入舊 .lexa 仍可能遇到；採「先到先得」並記警告。
+                        warnings.append(
+                            f"段落 {s}-{e} 同群組 {gid} 出現多個 label "
+                            f"（{seg_labels[gid]} vs {lid}），採用先標註的版本。"
+                        )
+                    else:
+                        seg_labels[gid] = lid
+        raw_segments.append((s, e, seg_labels))
+
+    # 3) 合併相鄰且 labels 完全相同的 segments，避免 boundary 切碎輸出。
+    merged: list[tuple[int, int, dict[str, str]]] = []
+    for s, e, lbls in raw_segments:
+        if merged and merged[-1][1] == s and merged[-1][2] == lbls:
+            ps, _pe, plbls = merged[-1]
+            merged[-1] = (ps, e, plbls)
+        else:
+            merged.append((s, e, lbls))
+
+    # 4) 逐段輸出。
+    lines: list[str] = []
     partial_count = 0
-    cursor = 0
     unannotated_chars = 0
     written = 0
 
-    for ann in sorted_anns:
-        if ann.start < cursor:
-            warnings.append(
-                f"標註重疊：偏移 {ann.start}-{ann.end} 與前一段重疊，已略過。"
-            )
+    for s, e, lbls in merged:
+        seg_text = text[s:e]
+        if not seg_text:
             continue
-
-        if exp.include_unannotated and ann.start > cursor:
-            gap = doc.text[cursor:ann.start]
-            if gap.strip():
-                lines.append(gap)
-                written += 1
-        elif ann.start > cursor:
-            unannotated_chars += (ann.start - cursor)
-
-        seg = doc.text[ann.start:ann.end]
-        if not seg:
-            continue
-
-        # Check group coverage.
-        missing = [
-            schema.group(gid).name
-            for gid in exp.tag_order
-            if gid not in ann.labels and schema.group(gid) is not None
-        ]
-        if missing:
-            partial_count += 1
-            if exp.require_all_groups:
-                warnings.append(
-                    f"段落「{seg[:15]}…」缺少必填群組：{', '.join(missing)}"
-                )
-
-        lines.append(_format_p_line(seg, ann.labels, schema, exp))
-        written += 1
-        cursor = ann.end
-
-    # trailing tail
-    if cursor < len(doc.text):
-        tail = doc.text[cursor:]
-        if exp.include_unannotated and tail.strip():
-            lines.append(tail)
+        if lbls:
+            missing = [
+                schema.group(gid).name
+                for gid in exp.tag_order
+                if gid not in lbls and schema.group(gid) is not None
+            ]
+            if missing:
+                partial_count += 1
+                if exp.require_all_groups:
+                    warnings.append(
+                        f"段落「{seg_text[:15]}…」缺少必填群組：{', '.join(missing)}"
+                    )
+            lines.append(_format_p_line(seg_text, lbls, schema, exp))
             written += 1
         else:
-            unannotated_chars += len(tail)
+            if exp.include_unannotated and seg_text.strip():
+                lines.append(seg_text)
+                written += 1
+            else:
+                unannotated_chars += len(seg_text)
 
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:

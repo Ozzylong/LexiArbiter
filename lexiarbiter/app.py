@@ -361,18 +361,22 @@ class MainWindow(QMainWindow):
                 ann = existing[0]
                 ann.labels[group_id] = label_id
             else:
-                # If selection overlaps existing annotations *partially*, ask user.
-                overlapping = self.doc.annotations_in_range(s, e)
-                if overlapping:
+                # 跨群組重疊應允許並存（每個群組是獨立任務）；只在「同群組」
+                # 重疊時才提示，因為同群組 label 互斥。
+                same_group_overlap = self.doc.annotations_in_range_for_group(
+                    s, e, group_id,
+                )
+                if same_group_overlap:
                     reply = QMessageBox.question(
                         self, "重疊處理",
-                        "選取範圍與既有標註重疊。\n要刪除既有標註再新增嗎？\n（按否將與既有標註並存。）",
-                        QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel,
+                        "選取範圍與既有同群組標註重疊。\n要刪除既有標註再新增嗎？",
+                        QMessageBox.Yes | QMessageBox.Cancel,
                     )
-                    if reply == QMessageBox.Cancel:
+                    if reply != QMessageBox.Yes:
                         return
-                    if reply == QMessageBox.Yes:
-                        for a in overlapping:
+                    for a in same_group_overlap:
+                        a.labels.pop(group_id, None)
+                        if not a.labels:
                             self.doc.remove_annotation(a.id)
                 ann = Annotation(start=s, end=e, labels={group_id: label_id})
                 self.doc.add_annotation(ann)

@@ -85,5 +85,13 @@ class Document:
             if not (a.end <= start or end <= a.start)
         ]
 
+    def annotations_in_range_for_group(
+        self, start: int, end: int, group_id: str
+    ) -> list[Annotation]:
+        return [
+            a for a in self.annotations
+            if not (a.end <= start or end <= a.start) and group_id in a.labels
+        ]
+
     def sorted_annotations(self) -> list[Annotation]:
         return sorted(self.annotations, key=lambda a: (a.start, a.end))
