@@ -192,7 +192,6 @@ class AnnotationEditor(QTextEdit):
         if self._mode is None:
             return
         bg_color: Optional[QColor] = None
-        primary_label_name = ""
         underline_style = QTextCharFormat.NoUnderline
         underline_color: Optional[QColor] = None
         tooltip_parts: list[str] = []
@@ -208,7 +207,6 @@ class AnnotationEditor(QTextEdit):
             color = _hex_to_qcolor(lb.color, alpha=110)
             if color is not None and bg_color is None:
                 bg_color = color
-                primary_label_name = lb.name
             elif color is None:
                 # Auxiliary: pick underline style by index in group's labels.
                 idx = g.labels.index(lb)
@@ -219,17 +217,18 @@ class AnnotationEditor(QTextEdit):
                     QTextCharFormat.WaveUnderline,
                 ]
                 underline_style = styles[idx % len(styles)]
-                # Use a darkened version of bg if available, else a neutral grey.
+                # Use a darkened version of bg if available, else a deep blue.
                 if bg_color is not None:
                     deep = QColor(bg_color)
                     deep.setAlpha(255)
                     underline_color = deep.darker(160)
                 else:
-                    underline_color = QColor("#455A64")
+                    underline_color = QColor("#1565C0")
 
         if bg_color is None:
-            # No primary color -> light yellow fallback so user still sees it.
-            bg_color = _hex_to_qcolor("#FFF59D", alpha=110)
+            # No primary color -> faint yellow fallback so the span is still
+            # discoverable, but kept light enough not to drown out the underline.
+            bg_color = _hex_to_qcolor("#FFF59D", alpha=50)
 
         fmt.setBackground(bg_color)
         if underline_style != QTextCharFormat.NoUnderline:
