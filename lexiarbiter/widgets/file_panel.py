@@ -17,11 +17,10 @@ Tab labels include a count, e.g. ``原始檔 .json (12)``. Within a tab:
 * When the open document is a ``.lexa``, its sibling ``.json`` row (matched
   by ``Path.stem``) is also bolded in the .json tab.
 
-``.txt`` rows are deliberately non-activatable: the flags omit
-``Qt.ItemIsEnabled`` so double-click and Enter cannot fire
-``file_open_requested``. They remain selectable so the user can still
-arrow-key through and read full filenames. A future "is this a valid model
-export?" check will flip ``ItemIsEnabled`` back on for valid rows.
+``.txt`` rows can be opened by double-click or Enter — they go through
+:func:`lexiarbiter.core.io.parse_legacy_txt`, which re-parses the model
+export format back into a ``Document``. The same ``●`` / ``*`` active-doc
+treatment applies across all three tabs.
 
 When ``set_directory(dir, current_path)`` is called with a non-None
 ``current_path``, the panel automatically switches to the tab matching that
@@ -49,7 +48,6 @@ _TAB_LABELS: dict[str, str] = {
     ".lexa": "標註檔 .lexa",
     ".txt": "模型檔 .txt",
 }
-_TXT_TOOLTIP = "尚未支援開啟 .txt（未來會加入驗證後再啟用）"
 
 
 class FilePanel(QWidget):
@@ -199,10 +197,6 @@ class FilePanel(QWidget):
                 item = QListWidgetItem(f"{prefix}{entry.name}{dirty_mark}")
                 item.setData(Qt.UserRole, str(entry))
 
-                if ext == ".txt":
-                    item.setFlags(item.flags() & ~Qt.ItemIsEnabled)
-                    tooltip_lines.append(_TXT_TOOLTIP)
-
                 # Bold the sibling .json row of the currently-open .lexa,
                 # even though that .json itself isn't the active document.
                 bold = is_current or (
@@ -229,9 +223,6 @@ class FilePanel(QWidget):
 
     def select_relative(self, delta: int):
         active = self.tabs.currentWidget()
-        if active is self._lists[".txt"]:
-            # .txt rows are non-activatable, so next/prev within this tab is a no-op.
-            return
         if not isinstance(active, QListWidget) or active.count() == 0:
             return
         cur = active.currentRow()

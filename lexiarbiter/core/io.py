@@ -91,7 +91,11 @@ def load_lexa(path: Path | str) -> Document:
 
 
 def load_any(path: Path | str) -> Document:
-    """Dispatch on extension."""
+    """Dispatch on extension.
+
+    .txt 不在此處理：它需要 AnnotationMode 才能把 tag 字串 resolve 成
+    (group_id, label_id)，由 MainWindow.load_file 直接呼叫 parse_legacy_txt。
+    """
     path = Path(path)
     suffix = path.suffix.lower()
     if suffix == ".lexa":
@@ -245,9 +249,21 @@ def export_txt(doc: Document, path: Path | str, schema: AnnotationMode) -> dict:
             else:
                 unannotated_chars += len(seg_text)
 
+    # 換行策略：依 doc.text 主導換行決定。JSON 來源是 CRLF → 輸出 CRLF；
+    # 純 LF 來源 → 輸出 LF。這讓「載入 .txt → 重新匯出」能達到 byte-identical
+    # 的 round-trip（反向驗證匯出流程的核心需求）。
+    crlf = text.count("\r\n")
+    lf_only = text.count("\n") - crlf
+    if crlf == 0 and lf_only == 0:
+        nl = "\r\n"  # 全無換行 → fallback CRLF，與 user pipeline（範例檔）一致
+    else:
+        nl = "\r\n" if crlf >= lf_only else "\n"
+
     path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
-        f.write("\n".join(lines))
+    # newline="" 避免 Python 在 Windows 上又把 \n 偷偷轉成 \r\n，
+    # 破壞我們手動決定好的換行策略。
+    with open(path, "w", encoding="utf-8", newline="") as f:
+        f.write(nl.join(lines))
 
     return {
         "written": written,
@@ -264,49 +280,127 @@ def export_txt(doc: Document, path: Path | str, schema: AnnotationMode) -> dict:
 _P_RE = re.compile(r"<P>(?P<tags>[^|<>]*)\|(?P<text>.*?)</P>", re.DOTALL)
 
 
-def parse_legacy_txt(path: Path | str, schema: AnnotationMode) -> Document:
+def parse_legacy_txt(
+    path: Path | str, schema: AnnotationMode
+) -> tuple[Document, dict]:
     """Best-effort import of a model-ready .txt back into a Document.
 
     Each ``<P>tag1,tag2|text</P>`` segment becomes an Annotation. Tags that the
-    schema does not recognise are dropped (with a warning attached to note).
+    schema does not recognise are dropped (recorded on ``ann.note``).
+
+    Returns ``(Document, summary)``。summary 用於：
+    1. 反向驗證匯出 bug：列出未知 tag、群組衝突、夾雜文字等異常。
+    2. UI 在載入後彈窗讓 user 確認是否繼續、彙整顯示偵測結果。
+
+    summary 鍵：
+    - ``paragraphs``: 解析到的 <P>...</P> 段數
+    - ``unknown_tags``: dict[str, int]，未知 tag 字串 → 出現次數
+    - ``empty_tag_paragraphs``: int，<P>|...</P>（無任何 tag）
+    - ``duplicate_tags_paragraphs``: int，<P>大前提,大前提|...</P>
+    - ``group_collisions_paragraphs``: int，<P>大前提,小前提|...</P>
+    - ``non_export_group_tags``: dict[str, int]，label 存在但其 group 不在
+      ``schema.export.tag_order``（re-export 會被丟掉，需要警告）
+    - ``stray_text_chars``: int，<P>...</P> 區塊外的非空白字元數
+    - ``dominant_newline``: ``"\\r\\n"`` 或 ``"\\n"``
     """
     path = Path(path)
-    with open(path, "r", encoding="utf-8") as f:
-        raw = f.read()
+    # 以 bytes 讀檔偵測主導換行：要算「裸 \n」必須在 decode 前做，
+    # 否則 Python 的 universal newlines 會把 \r\n 偷偷攤平。
+    raw_bytes = path.read_bytes()
+    crlf = raw_bytes.count(b"\r\n")
+    bare_lf = raw_bytes.count(b"\n") - crlf
+    nl = "\r\n" if crlf >= bare_lf else "\n"
+    raw = raw_bytes.decode("utf-8")
 
     text_parts: list[str] = []
     annotations: list[Annotation] = []
+
+    summary: dict = {
+        "paragraphs": 0,
+        "unknown_tags": {},
+        "empty_tag_paragraphs": 0,
+        "duplicate_tags_paragraphs": 0,
+        "group_collisions_paragraphs": 0,
+        "non_export_group_tags": {},
+        "stray_text_chars": 0,
+        "dominant_newline": nl,
+    }
+
+    export_groups = set(schema.export.tag_order)
+
+    # 計算「<P>...</P> 區塊外的非空白字元數」用 cursor 追蹤。
     cursor = 0
 
     for m in _P_RE.finditer(raw):
-        tags = [t.strip() for t in m.group("tags").split(",") if t.strip()]
+        # 區塊間夾雜文字（含最前面）
+        gap = raw[cursor:m.start()]
+        summary["stray_text_chars"] += sum(1 for ch in gap if not ch.isspace())
+
+        tags_raw = [t.strip() for t in m.group("tags").split(",") if t.strip()]
         seg = m.group("text")
+
+        if not tags_raw:
+            summary["empty_tag_paragraphs"] += 1
+        if len(tags_raw) != len(set(tags_raw)):
+            summary["duplicate_tags_paragraphs"] += 1
+
         labels: dict[str, str] = {}
+        note_lines: list[str] = []
         unknown: list[str] = []
-        for t in tags:
+        collisions: list[str] = []  # 同群組衝突敘述
+        for t in tags_raw:
             lb = schema.find_label_by_tag(t)
             if lb is None:
                 unknown.append(t)
-            else:
-                labels[lb.group_id] = lb.id
+                summary["unknown_tags"][t] = summary["unknown_tags"].get(t, 0) + 1
+                continue
+            if lb.group_id not in export_groups:
+                # label 存在但 group 不在 export.tag_order：re-export 會丟掉，
+                # 視為「未知（不會被匯出的群組）」一起警告。
+                key = f"(非匯出群組: {lb.group_id})"
+                summary["non_export_group_tags"][t] = (
+                    summary["non_export_group_tags"].get(t, 0) + 1
+                )
+                note_lines.append(f"非匯出群組標籤：{t}（group={lb.group_id}）")
+            if lb.group_id in labels and labels[lb.group_id] != lb.id:
+                collisions.append(
+                    f"{lb.group_id}={labels[lb.group_id]} vs {lb.id}"
+                )
+            labels[lb.group_id] = lb.id
 
-        start = sum(len(p) for p in text_parts) + (len(text_parts))  # joined with \n
-        # Build simple flat text (one segment per line).
+        if collisions:
+            summary["group_collisions_paragraphs"] += 1
+            note_lines.append(
+                f"同群組衝突：{'; '.join(collisions)}（採後標註的版本）"
+            )
+
+        if unknown:
+            note_lines.append(f"未知標籤：{','.join(unknown)}")
+
+        # 串接：區塊間用主導換行（與檔案內保持一致）。
+        # 區塊內 seg 保持原樣（已是主導換行 + 文字內容）。
         if text_parts:
-            text_parts.append("\n")
+            text_parts.append(nl)
         text_parts.append(seg)
         end = sum(len(p) for p in text_parts)
-        # adjust start accordingly
         start = end - len(seg)
 
         ann = Annotation(start=start, end=end, labels=labels)
-        if unknown:
-            ann.note = f"未知標籤：{','.join(unknown)}"
+        if note_lines:
+            ann.note = "；".join(note_lines)
         annotations.append(ann)
+        summary["paragraphs"] += 1
         cursor = m.end()
 
+    # 最後一個 </P> 之後的夾雜文字
+    tail = raw[cursor:]
+    summary["stray_text_chars"] += sum(1 for ch in tail if not ch.isspace())
+
+    if not annotations:
+        raise ValueError("此 .txt 不含任何 <P>...</P> 段落，無法作為標註匯入。")
+
     text = "".join(text_parts)
-    return Document(
+    doc = Document(
         text=text,
         annotations=annotations,
         schema_id=schema.id,
@@ -314,3 +408,4 @@ def parse_legacy_txt(path: Path | str, schema: AnnotationMode) -> Document:
         file_path=str(path),
         dirty=False,
     )
+    return doc, summary

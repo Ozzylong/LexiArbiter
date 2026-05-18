@@ -493,7 +493,8 @@ class MainWindow(QMainWindow):
             start_dir = str(Path(self.doc.file_path).parent)
         path, _ = QFileDialog.getOpenFileName(
             self, "開啟檔案", start_dir,
-            "支援的格式 (*.json *.lexa);;判決 JSON (*.json);;標註進度 (*.lexa);;所有檔案 (*.*)"
+            "支援的格式 (*.json *.lexa *.txt);;判決 JSON (*.json);;"
+            "標註進度 (*.lexa);;模型匯出 (*.txt);;所有檔案 (*.*)"
         )
         if path:
             self.load_file(path)
@@ -545,16 +546,21 @@ class MainWindow(QMainWindow):
                 use_autosave = True
                 log.info("使用者選擇從 autosave 還原：%s", autosave)
 
+        suffix = src_path.suffix.lower()
+        txt_summary: Optional[dict] = None
         try:
             if use_autosave:
                 doc = iomod.load_lexa(autosave)
                 # 視為「使用者開啟原檔」：保留原 file_path（如果是 .lexa 直接覆蓋；
-                # 如果是 .json 則 file_path=None，下次按存檔會走 save_as）。
+                # 如果是 .json 或 .txt 則 file_path=None，下次按存檔會走 save_as）。
                 # dirty=True 提醒使用者這份內容尚未正式存檔。
                 doc.file_path = (str(src_path)
-                                 if src_path.suffix.lower() == ".lexa"
+                                 if suffix == ".lexa"
                                  else None)
                 doc.dirty = True
+            elif suffix == ".txt":
+                # .txt 需要 schema 才能 resolve tag 字串，不走 load_any。
+                doc, txt_summary = iomod.parse_legacy_txt(path, self.mode)
             else:
                 doc = iomod.load_any(path)
         except Exception as e:
@@ -574,6 +580,23 @@ class MainWindow(QMainWindow):
                 if reply == QMessageBox.Yes:
                     self._switch_mode(target.id, persist=False)
 
+        # .txt 載入：若有未知標籤，要 user 確認是否繼續（預設 Cancel）。
+        if txt_summary is not None and txt_summary["unknown_tags"]:
+            lines = [f'  · "{t}" × {n}'
+                     for t, n in txt_summary["unknown_tags"].items()]
+            reply = QMessageBox.question(
+                self, "發現未知標籤",
+                f"此 .txt 包含 {len(txt_summary['unknown_tags'])} 個目前模式不認得的標籤：\n"
+                + "\n".join(lines)
+                + "\n\n要繼續開啟嗎？這些段落仍會匯入，"
+                "但未知標籤會記到 note 欄位、不會出現在 label 中。",
+                QMessageBox.Yes | QMessageBox.Cancel,
+                QMessageBox.Cancel,
+            )
+            if reply != QMessageBox.Yes:
+                log.info("使用者於未知標籤確認時取消載入：%s", path)
+                return
+
         self.doc = doc
         self.editor.attach(doc, self.mode, self.prefs)
         self._update_window_title()
@@ -581,6 +604,12 @@ class MainWindow(QMainWindow):
         self.file_panel.set_directory(Path(path).parent, Path(path))
         self._update_actions()
         self._refresh_status()
+
+        # .txt 載入後彙整顯示偵測結果（反向驗證匯出 bug 的重要線索）。
+        if txt_summary is not None:
+            notable = self._format_txt_summary(txt_summary)
+            if notable:
+                QMessageBox.information(self, "已匯入 .txt", notable)
 
     def action_save(self) -> bool:
         if self.doc is None:
@@ -638,7 +667,12 @@ class MainWindow(QMainWindow):
             return
         if self.doc.file_path:
             base = Path(self.doc.file_path)
-            default = str(base.with_suffix(".txt"))
+            if base.suffix.lower() == ".txt":
+                # 從 .txt 載入時：只給目錄、不給檔名，強制 user 重新命名，
+                # 避免不小心覆蓋原檔（原檔可能用於 byte-identical 反向比對）。
+                default = str(base.parent) + "\\"
+            else:
+                default = str(base.with_suffix(".txt"))
         else:
             default = "export.txt"
         path, _ = QFileDialog.getSaveFileName(
@@ -673,6 +707,42 @@ class MainWindow(QMainWindow):
         else:
             QMessageBox.information(self, "匯出完成", msg)
         self.file_panel.refresh()
+
+    @staticmethod
+    def _format_txt_summary(summary: dict) -> str:
+        """組裝 .txt 載入後的彙整訊息；無任何異常則回空字串（不彈窗）。"""
+        nl_label = "CRLF" if summary["dominant_newline"] == "\r\n" else "LF"
+        head = f"已匯入 {summary['paragraphs']} 段（主導換行：{nl_label}）。"
+
+        details: list[str] = []
+        if summary["unknown_tags"]:
+            details.append(f"未知標籤：{sum(summary['unknown_tags'].values())} 次")
+        if summary["non_export_group_tags"]:
+            details.append(
+                f"非匯出群組標籤：{sum(summary['non_export_group_tags'].values())} 次"
+                "（re-export 會被丟棄）"
+            )
+        if summary["empty_tag_paragraphs"]:
+            details.append(f"無標籤的 <P> 段：{summary['empty_tag_paragraphs']}")
+        if summary["duplicate_tags_paragraphs"]:
+            details.append(
+                f"重複標籤的 <P> 段：{summary['duplicate_tags_paragraphs']}"
+            )
+        if summary["group_collisions_paragraphs"]:
+            details.append(
+                f"同群組多標籤的 <P> 段：{summary['group_collisions_paragraphs']}"
+                "（採後標註的版本）"
+            )
+        if summary["stray_text_chars"]:
+            details.append(
+                f"<P> 區塊外夾雜非空白字元：{summary['stray_text_chars']}"
+            )
+
+        if not details:
+            return ""
+        return head + "\n\n偵測到以下狀況（可能是匯出 bug 線索）：\n" + "\n".join(
+            f"  · {d}" for d in details
+        )
 
     # -------------------------------------------------------- mode switching
 
