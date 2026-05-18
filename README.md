@@ -31,7 +31,7 @@ pip install pyinstaller
 python build_exe.py
 ```
 
-完成後會在 `dist/` 產出 `LexiArbiter.exe` 以及一份 `configs/`，兩者放在一起即可分發。
+完成後會在 `dist/LexiArbiter/` 產出一份資料夾，內含 `LexiArbiter.exe`、PyInstaller 的 `_internal/` 相依、以及 `configs/`、`assets/`。整個資料夾保留在一起即可分發（壓 zip 給使用者解開就能跑）。
 使用者可直接編輯 `configs/` 內的 JSON 來新增/調整標註模式，無需重新打包。
 
 ## 檔案類型

@@ -3,10 +3,12 @@
 import logging
 import sys
 
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication, QMessageBox
 
 from lexiarbiter import __version__
 from lexiarbiter.app import MainWindow
+from lexiarbiter.core.config import app_root
 from lexiarbiter.core.logger import (
     current_log_dir,
     install_exception_hook,
@@ -25,6 +27,13 @@ def main():
     app = QApplication(sys.argv)
     app.setApplicationName("LexiArbiter")
     app.setOrganizationName("LexiArbiter")
+
+    # 視窗 / 工作列 icon；找不到檔案就略過，不影響啟動
+    icon_path = app_root() / "assets" / "LexiArbiter_icon.ico"
+    if icon_path.exists():
+        app.setWindowIcon(QIcon(str(icon_path)))
+    else:
+        log.info("未找到 icon 檔，略過 setWindowIcon：%s", icon_path)
 
     # log 寫不進預設位置時告知使用者 fallback 路徑，避免發生問題卻不知道 log 在哪。
     if used_fallback() and current_log_dir() is not None:

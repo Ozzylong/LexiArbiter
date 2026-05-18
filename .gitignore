@@ -15,4 +15,5 @@ logs/
 .claude/
 documents/
 CLAUDE.md
-assets/
+assets/*
+!assets/LexiArbiter_icon.ico
