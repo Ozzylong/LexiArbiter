@@ -106,6 +106,9 @@ class AnnotationEditor(QTextEdit):
 
     annotation_clicked = Signal(str)  # annotation id
     selection_changed = Signal(int, int)  # storage start, storage end
+    # 滑鼠左鍵拖選結束、且選取範圍非空時 emit；參數為放開滑鼠的 global 座標，
+    # 讓 host window 可以在原地附近彈出快速標註選單。
+    selection_finished = Signal(QPoint)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -125,6 +128,8 @@ class AnnotationEditor(QTextEdit):
         self._prefs: Optional[UserPreferences] = None
         self._omap: Optional[_OffsetMap] = None
         self._context_menu_builder = None
+        # 追蹤是不是「正在拖左鍵」；右鍵 / 中鍵 / 鍵盤選取都不應觸發 popup。
+        self._left_drag_active: bool = False
 
         # 系統深 / 淺色主題切換時自動重繪。Qt 6.5+ 才有此 signal，
         # 舊版直接 fallback 到「重啟程式才生效」。
@@ -185,6 +190,21 @@ class AnnotationEditor(QTextEdit):
     def _on_selection_changed(self):
         s, e = self.storage_selection()
         self.selection_changed.emit(s, e)
+
+    # --------------------------------------------------- mouse drag detection
+
+    def mousePressEvent(self, ev):
+        if ev.button() == Qt.LeftButton:
+            self._left_drag_active = True
+        super().mousePressEvent(ev)
+
+    def mouseReleaseEvent(self, ev):
+        super().mouseReleaseEvent(ev)
+        # 只在「左鍵放開」且本輪確實是從左鍵按下開始時觸發；右鍵 / 鍵盤選取都不算。
+        if ev.button() == Qt.LeftButton and self._left_drag_active:
+            self._left_drag_active = False
+            if self.has_selection():
+                self.selection_finished.emit(ev.globalPosition().toPoint())
 
     # ------------------------------------------------------ highlight render
 

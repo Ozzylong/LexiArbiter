@@ -11,14 +11,14 @@ from typing import Optional
 
 log = logging.getLogger(__name__)
 
-from PySide6.QtCore import Qt, QSize, QTimer
+from PySide6.QtCore import Qt, QPoint, QSize, QTimer
 from PySide6.QtGui import (
     QAction, QActionGroup, QColor, QIcon, QPainter, QPalette, QPixmap,
 )
 from PySide6.QtWidgets import (
-    QApplication, QFileDialog, QHBoxLayout, QLabel, QMainWindow, QMenu,
+    QApplication, QFileDialog, QFrame, QHBoxLayout, QLabel, QMainWindow, QMenu,
     QMessageBox, QPushButton, QSplitter, QStatusBar, QToolBar, QVBoxLayout,
-    QWidget,
+    QWidget, QWidgetAction,
 )
 
 from . import __app_name__, __version__
@@ -101,6 +101,7 @@ class MainWindow(QMainWindow):
         self.editor = AnnotationEditor()
         self.editor.set_context_menu_builder(self._build_context_menu)
         self.editor.selection_changed.connect(self._on_selection_changed)
+        self.editor.selection_finished.connect(self._show_quick_label_popup)
 
         self.file_panel = FilePanel()
         self.file_panel.file_open_requested.connect(self._handle_file_open_requested)
@@ -837,6 +838,61 @@ class MainWindow(QMainWindow):
         if not has_selection and ann_id is None:
             act_remove.setEnabled(False)
         menu.addAction(act_remove)
+
+    # ----------------------------------------------- 反白後自動跳出快速選單
+
+    def _show_quick_label_popup(self, global_pos: QPoint):
+        """滑鼠拖選結束時呼叫；在選取附近彈出緊湊水平的標籤選單。
+
+        以 prefs 開關控制；沒開檔案時不跳。
+        """
+        if not self.prefs.behavior.get("auto_popup_on_selection", True):
+            return
+        if self.doc is None:
+            return
+
+        menu = QMenu(self)
+        wa = QWidgetAction(menu)
+        wa.setDefaultWidget(self._make_quick_label_widget(menu))
+        menu.addAction(wa)
+        # 避開剛放開滑鼠的位置，往下偏 8px。Qt 會自動處理畫面邊界。
+        menu.exec(global_pos + QPoint(0, 8))
+
+    def _make_quick_label_widget(self, host_menu: QMenu) -> QWidget:
+        """建立水平緊湊版的標籤按鈕區塊；每個群組一列。
+
+        按鈕樣式直接複用 :meth:`_button_style_for`；點擊行為走
+        :meth:`_make_label_handler`，套用完關閉外層 ``host_menu``。
+        """
+        frame = QFrame()
+        outer = QVBoxLayout(frame)
+        outer.setContentsMargins(4, 4, 4, 4)
+        outer.setSpacing(4)
+
+        for gi, g in enumerate(self.mode.groups):
+            if gi > 0:
+                sep = QFrame()
+                sep.setFrameShape(QFrame.HLine)
+                sep.setFrameShadow(QFrame.Sunken)
+                outer.addWidget(sep)
+            row = QHBoxLayout()
+            row.setSpacing(4)
+            for lb in g.labels:
+                btn = QPushButton(lb.name)
+                btn.setCursor(Qt.PointingHandCursor)
+                shortcut = self.prefs.label_shortcut(g.id, lb.id, lb.shortcut)
+                tip = lb.name
+                if shortcut:
+                    tip += f"  ({shortcut})"
+                btn.setToolTip(tip)
+                btn.setStyleSheet(self._button_style_for(lb))
+                handler = self._make_label_handler(g.id, lb.id)
+                btn.clicked.connect(
+                    lambda _checked=False, h=handler: (h(), host_menu.close())
+                )
+                row.addWidget(btn)
+            outer.addLayout(row)
+        return frame
 
     def _on_selection_changed(self, s: int, e: int):
         if e > s and self.doc is not None:
