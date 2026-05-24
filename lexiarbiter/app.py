@@ -29,7 +29,7 @@ from .core.config import (
     list_annotation_modes, load_annotation_mode,
 )
 from .core.logger import current_log_dir
-from .core.models import Annotation, Document
+from .core.models import Annotation, Document, detect_same_group_conflicts
 from .widgets.editor import AnnotationEditor
 from .widgets.file_panel import FilePanel
 
@@ -362,6 +362,41 @@ class MainWindow(QMainWindow):
         )
         return reply == QMessageBox.Yes
 
+    def _resolve_same_group_overlap(
+        self, s: int, e: int, group_id: str,
+        exclude_id: Optional[str] = None,
+    ) -> bool:
+        """檢查 [s, e) 範圍內除了 exclude_id 以外，是否有其他標註已佔用 group_id。
+
+        有重疊就彈窗詢問是否刪除既有的同群組 label：
+        - 使用者同意 → 就地清掉（若清空整條 ann 的 labels 則整條移除），回 True。
+        - 使用者取消 → 回 False，呼叫端應 return 不寫入。
+        無重疊直接回 True，呼叫端繼續即可。
+
+        三條 apply_label 分支共用同一邏輯，避免「exact match / cursor 內套用」
+        路徑繞過跨標註同群組衝突檢查（會在匯出時切碎成奇怪段落）。
+        """
+        if self.doc is None:
+            return False
+        overlap = [
+            a for a in self.doc.annotations_in_range_for_group(s, e, group_id)
+            if a.id != exclude_id
+        ]
+        if not overlap:
+            return True
+        reply = QMessageBox.question(
+            self, "重疊處理",
+            "套用範圍與既有同群組標註重疊。\n要刪除既有標註的該群組 label 再套用嗎？",
+            QMessageBox.Yes | QMessageBox.Cancel,
+        )
+        if reply != QMessageBox.Yes:
+            return False
+        for a in overlap:
+            a.labels.pop(group_id, None)
+            if not a.labels:
+                self.doc.remove_annotation(a.id)
+        return True
+
     def apply_label(self, group_id: str, label_id: str):
         if self.doc is None:
             self.status.showMessage("請先開啟一個檔案再進行標註。", 4000)
@@ -376,6 +411,10 @@ class MainWindow(QMainWindow):
                 if ann is None:
                     return
                 if not self._confirm_replace_existing_group_label(ann, group_id, label_id):
+                    return
+                if not self._resolve_same_group_overlap(
+                    ann.start, ann.end, group_id, exclude_id=ann.id,
+                ):
                     return
                 ann.labels[group_id] = label_id
                 self.doc.dirty = True
@@ -392,25 +431,16 @@ class MainWindow(QMainWindow):
                 ann = existing[0]
                 if not self._confirm_replace_existing_group_label(ann, group_id, label_id):
                     return
+                if not self._resolve_same_group_overlap(
+                    s, e, group_id, exclude_id=ann.id,
+                ):
+                    return
                 ann.labels[group_id] = label_id
             else:
                 # 跨群組重疊應允許並存（每個群組是獨立任務）；只在「同群組」
                 # 重疊時才提示，因為同群組 label 互斥。
-                same_group_overlap = self.doc.annotations_in_range_for_group(
-                    s, e, group_id,
-                )
-                if same_group_overlap:
-                    reply = QMessageBox.question(
-                        self, "重疊處理",
-                        "選取範圍與既有同群組標註重疊。\n要刪除既有標註再新增嗎？",
-                        QMessageBox.Yes | QMessageBox.Cancel,
-                    )
-                    if reply != QMessageBox.Yes:
-                        return
-                    for a in same_group_overlap:
-                        a.labels.pop(group_id, None)
-                        if not a.labels:
-                            self.doc.remove_annotation(a.id)
+                if not self._resolve_same_group_overlap(s, e, group_id):
+                    return
                 ann = Annotation(start=s, end=e, labels={group_id: label_id})
                 self.doc.add_annotation(ann)
             self.doc.dirty = True
@@ -606,11 +636,42 @@ class MainWindow(QMainWindow):
         self._update_actions()
         self._refresh_status()
 
+        # 偵測同群組跨標註衝突（舊版 apply_label bug 殘留 / 手改 .lexa 可能造成）。
+        # 不自動修改使用者資料，只提示位置以便手動清理；匯出時這些段會被切碎。
+        self._warn_if_group_conflicts(doc)
+
         # .txt 載入後彙整顯示偵測結果（反向驗證匯出 bug 的重要線索）。
         if txt_summary is not None:
             notable = self._format_txt_summary(txt_summary)
             if notable:
                 QMessageBox.information(self, "已匯入 .txt", notable)
+
+    def _warn_if_group_conflicts(self, doc: Document) -> None:
+        """掃描 doc 內同群組衝突段，若有則彈 warning 列前幾筆位置。"""
+        conflicts = detect_same_group_conflicts(doc.annotations)
+        if not conflicts:
+            return
+        lines: list[str] = []
+        for s, e, gid, lids in conflicts[:8]:
+            grp = self.mode.group(gid)
+            gname = grp.name if grp else gid
+            lnames = []
+            for lid in lids:
+                lb = grp.label(lid) if grp else None
+                lnames.append(lb.name if lb else lid)
+            preview = doc.text[s:min(s + 15, e)].replace("\r", " ").replace("\n", " ")
+            lines.append(
+                f"  · 段 {s}-{e}「{preview}…」群組「{gname}」：{' / '.join(lnames)}"
+            )
+        msg = (
+            f"偵測到 {len(conflicts)} 個同群組衝突段落（同一字元範圍內、同群組出現多個 label）。\n"
+            "匯出 .txt 時這些段會被切碎成非預期的小段，建議用「標註選單 → 清除『群組』於選取段」"
+            "清掉重複的範圍後重新標註。\n\n"
+            + "\n".join(lines)
+        )
+        if len(conflicts) > 8:
+            msg += f"\n（其餘 {len(conflicts) - 8} 筆已略過）"
+        QMessageBox.warning(self, "標註資料偵測到衝突", msg)
 
     def action_save(self) -> bool:
         if self.doc is None:
