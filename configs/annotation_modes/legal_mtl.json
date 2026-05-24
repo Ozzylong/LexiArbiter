@@ -1,0 +1,41 @@
+{
+  "id": "legal_mtl",
+  "name": "法律判決 MTL 標註",
+  "description": "以 multi-task learning 為目標的法律判決標註模式：論證類別 (主任務) + 人稱 (輔助任務)。",
+  "groups": [
+    {
+      "id": "argument_type",
+      "name": "論證類別",
+      "role": "primary",
+      "description": "主任務：判斷該段文字屬於論證鏈的哪一環節。",
+      "labels": [
+        {"id": "procedure",      "name": "程序",    "tag": "程序",         "color": "#26A69A", "shortcut": "Ctrl+1"},
+        {"id": "fact",           "name": "事實",    "tag": "事實",         "color": "#FF7043", "shortcut": "Ctrl+2"},
+        {"id": "major_premise",  "name": "大前提",  "tag": "大前提",       "color": "#FFCA28", "shortcut": "Ctrl+3"},
+        {"id": "minor_premise",  "name": "小前提",  "tag": "小前提",       "color": "#42A5F5", "shortcut": "Ctrl+4"},
+        {"id": "judgment_other", "name": "心證其他", "tag": "心證其他部份", "color": "#AB47BC", "shortcut": "Ctrl+5"},
+        {"id": "conclusion",     "name": "結論",    "tag": "結論",         "color": "#EF5350", "shortcut": "Ctrl+6"}
+      ]
+    },
+    {
+      "id": "person",
+      "name": "人稱",
+      "role": "auxiliary",
+      "description": "輔助任務：該段文字是否為第一人稱敘述。",
+      "labels": [
+        {"id": "first_person", "name": "第一人稱",  "tag": "第一人稱",   "color": null, "shortcut": "Ctrl+Shift+1"},
+        {"id": "third_person", "name": "非第一人稱", "tag": "非第一人稱", "color": null, "shortcut": "Ctrl+Shift+2"}
+      ]
+    }
+  ],
+  "export": {
+    "format": "p_tag",
+    "tag_order": ["argument_type", "person"],
+    "tag_separator": ",",
+    "wrapper_open": "<P>",
+    "wrapper_close": "</P>",
+    "field_separator": "|",
+    "include_unannotated": false,
+    "require_all_groups": false
+  }
+}
