@@ -95,3 +95,39 @@ class Document:
 
     def sorted_annotations(self) -> list[Annotation]:
         return sorted(self.annotations, key=lambda a: (a.start, a.end))
+
+
+def detect_same_group_conflicts(
+    annotations: list[Annotation],
+) -> list[tuple[int, int, str, list[str]]]:
+    """掃出同一字元範圍內、同群組卻有多個不同 label 的衝突段。
+
+    回傳 ``[(start, end, group_id, [label_ids])...]``，每筆對應一段不可分割
+    的衝突區段。``label_ids`` 依「被加入 seg_labels 的順序」排列，與
+    :func:`lexiarbiter.core.io.export_txt` 的「先標註者勝」邏輯一致，讓
+    UI 能向使用者解釋實際匯出時哪個 label 會被採用。
+    """
+    # 收 boundary points（與 export_txt 同套切段邏輯，但這裡只關心衝突）。
+    points: set[int] = set()
+    for a in annotations:
+        points.add(a.start)
+        points.add(a.end)
+    sorted_points = sorted(points)
+
+    out: list[tuple[int, int, str, list[str]]] = []
+    for i in range(len(sorted_points) - 1):
+        s, e = sorted_points[i], sorted_points[i + 1]
+        if s >= e:
+            continue
+        # 每個 group 在此段收集所有看過的 label_id（順序、去重）。
+        seen: dict[str, list[str]] = {}
+        for a in annotations:
+            if a.start <= s and e <= a.end:
+                for gid, lid in a.labels.items():
+                    lst = seen.setdefault(gid, [])
+                    if lid not in lst:
+                        lst.append(lid)
+        for gid, lids in seen.items():
+            if len(lids) > 1:
+                out.append((s, e, gid, lids))
+    return out

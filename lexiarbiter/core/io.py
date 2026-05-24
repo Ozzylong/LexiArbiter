@@ -201,8 +201,9 @@ def export_txt(doc: Document, path: Path | str, schema: AnnotationMode) -> dict:
                     if gid in seg_labels and seg_labels[gid] != lid:
                         # 同群組衝突理論上不會發生（apply_label 已禁止），
                         # 但讀入舊 .lexa 仍可能遇到；採「先到先得」並記警告。
+                        seg_preview = text[s:min(s + 15, e)].replace("\r", " ").replace("\n", " ")
                         warnings.append(
-                            f"段落 {s}-{e} 同群組 {gid} 出現多個 label "
+                            f"段落 {s}-{e}「{seg_preview}…」同群組 {gid} 出現多個 label "
                             f"（{seg_labels[gid]} vs {lid}），採用先標註的版本。"
                         )
                     else:
