@@ -1,0 +1,62 @@
+name: Release macOS
+
+# push tag v* (例如 v1.0.0) 時觸發；建議流程：
+#   git tag v1.0.0 && git push origin v1.0.0
+on:
+  push:
+    tags:
+      - 'v*'
+
+# release 上傳 asset 需要 contents: write 權限
+permissions:
+  contents: write
+
+jobs:
+  build-macos:
+    name: Build macOS .app (Apple Silicon)
+    runs-on: macos-latest   # 目前 = macOS 14 Sonoma, arm64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Generate .icns from .png
+        # macOS 內建工具 sips + iconutil，把 LexiArbiter_icon.png 轉成 .icns。
+        # 各尺寸都產生，讓 Finder / Dock / 切換器都有對應解析度。
+        run: |
+          mkdir -p assets/LexiArbiter_icon.iconset
+          ICONSET=assets/LexiArbiter_icon.iconset
+          SRC=assets/LexiArbiter_icon.png
+          sips -z 16 16     "$SRC" --out "$ICONSET/icon_16x16.png"
+          sips -z 32 32     "$SRC" --out "$ICONSET/icon_16x16@2x.png"
+          sips -z 32 32     "$SRC" --out "$ICONSET/icon_32x32.png"
+          sips -z 64 64     "$SRC" --out "$ICONSET/icon_32x32@2x.png"
+          sips -z 128 128   "$SRC" --out "$ICONSET/icon_128x128.png"
+          sips -z 256 256   "$SRC" --out "$ICONSET/icon_128x128@2x.png"
+          sips -z 256 256   "$SRC" --out "$ICONSET/icon_256x256.png"
+          sips -z 512 512   "$SRC" --out "$ICONSET/icon_256x256@2x.png"
+          sips -z 512 512   "$SRC" --out "$ICONSET/icon_512x512.png"
+          sips -z 1024 1024 "$SRC" --out "$ICONSET/icon_512x512@2x.png"
+          iconutil -c icns "$ICONSET" -o assets/LexiArbiter_icon.icns
+
+      - name: Build .app bundle
+        run: python build_mac.py
+
+      - name: Verify codesign
+        run: codesign --verify --verbose dist/LexiArbiter.app
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/LexiArbiter-macos-arm64.zip
+          generate_release_notes: true

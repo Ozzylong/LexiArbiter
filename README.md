@@ -1,6 +1,6 @@
 # LexiArbiter
 
-針對台灣司法判決進行 multi-task learning 標註資料製作的 Windows 桌面工具。
+針對台灣司法判決進行 multi-task learning 標註資料製作的桌面工具，支援 Windows 與 macOS (Apple Silicon)。
 讀取司法院 open data JSON 檔，用螢光筆方式為每一段文字同時套上多個分類標籤，最後一鍵匯出成模型訓練可直接用的 `.txt`（例如 `<P>大前提,非第一人稱|...</P>`）。
 
 
@@ -14,13 +14,28 @@
 
 ## 下載與安裝
 
-1. 到 [GitHub Releases](https://github.com/Ozzylong/LexiArbiter/releases) 下載最新版的 `LexiArbiter-vX.X.X-win64.zip`。
+到 [GitHub Releases](https://github.com/Ozzylong/LexiArbiter/releases) 下載對應作業系統的版本，不需要另外安裝 Python。
+
+### Windows 10 / 11 (64-bit)
+
+1. 下載 `LexiArbiter-vX.X.X-win64.zip`。
 2. 解壓縮到任意位置（建議放在自己有寫入權限的資料夾，例如桌面或 `D:\Tools\`）。
 3. 進入解壓出來的資料夾，雙擊 `LexiArbiter.exe` 即可啟動。
 
-**系統需求**：Windows 10 / 11 (64-bit)。不需要另外安裝 Python。
-
 > 解壓後請保持資料夾結構完整 —— `LexiArbiter.exe`、`_internal/`、`configs/`、`assets/` 要放在一起，不要只把 exe 抽出來。
+
+### macOS（Apple Silicon / M 系列晶片）
+
+1. 下載 `LexiArbiter-macos-arm64.zip` 並解壓，把 `LexiArbiter.app` 拖到 `/Applications`（或任何位置）。
+2. **首次開啟前**，打開 Terminal 跑這一行解除 macOS Gatekeeper 隔離：
+
+   ```bash
+   xattr -dr com.apple.quarantine /Applications/LexiArbiter.app
+   ```
+
+3. 之後雙擊 `LexiArbiter.app` 即可正常開啟。
+
+> 因為這是個人小工具未做 Apple Developer 簽名，首次開啟需要上述一次性步驟；若不執行會跳「app 已損壞」的錯誤訊息。Intel Mac 使用者可嘗試透過 Rosetta 2 執行，但官方未測試保證。
 
 ## 第一次使用
 

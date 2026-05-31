@@ -24,7 +24,7 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import QMenu, QTextEdit
 
-from ..core.config import AnnotationMode, UserPreferences
+from ..core.config import AnnotationMode, UserPreferences, default_ui_font
 from ..core.models import Annotation, Document
 
 
@@ -147,7 +147,7 @@ class AnnotationEditor(QTextEdit):
         self._mode = mode
         self._prefs = prefs
 
-        font = QFont(prefs.ui.get("font_family", "Microsoft JhengHei UI"),
+        font = QFont(prefs.ui.get("font_family", default_ui_font()),
                      prefs.ui.get("font_size", 14))
         self.setFont(font)
 

@@ -732,7 +732,7 @@ class MainWindow(QMainWindow):
             if base.suffix.lower() == ".txt":
                 # 從 .txt 載入時：只給目錄、不給檔名，強制 user 重新命名，
                 # 避免不小心覆蓋原檔（原檔可能用於 byte-identical 反向比對）。
-                default = str(base.parent) + "\\"
+                default = str(base.parent) + os.sep
             else:
                 default = str(base.with_suffix(".txt"))
         else:
