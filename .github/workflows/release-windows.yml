@@ -1,0 +1,43 @@
+name: Release Windows
+
+# 與 release-mac.yml 共用同一個 v* 標籤觸發；push tag 時兩個 workflow 會
+# 各自在 Windows / macOS runner 上打包，並把 zip 上傳到「同一個」Release。
+#   git tag v1.0.0 && git push origin v1.0.0
+on:
+  push:
+    tags:
+      - 'v*'
+
+# release 上傳 asset 需要 contents: write 權限
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    name: Build Windows onedir (x64)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Build onedir + zip
+        # build_exe.py 會用 assets/LexiArbiter_icon.ico 打包，並壓出
+        # dist/LexiArbiter-windows-x64.zip（內含 LexiArbiter/ 資料夾）。
+        run: python build_exe.py
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/LexiArbiter-windows-x64.zip
+          generate_release_notes: true

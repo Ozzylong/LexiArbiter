@@ -27,6 +27,8 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 DIST = HERE / "dist"
 BUILD = HERE / "build"
+APP_NAME = "LexiArbiter"
+ARCH = "x64"
 
 
 def main():
@@ -72,7 +74,17 @@ def main():
     _sync_tree(HERE / "configs", target_dir / "configs", "configs/")
     _sync_tree(HERE / "assets", target_dir / "assets", "assets/")
 
+    # 比照 build_mac.py：打包完直接壓出可上傳 GitHub Release 的 zip。
+    # base_dir=LexiArbiter 讓 zip 內最外層保留一層 LexiArbiter/ 資料夾，
+    # 使用者解壓後得到的是乾淨的資料夾、不會散落一地。
+    zip_base = DIST / f"{APP_NAME}-windows-{ARCH}"
+    zip_path = zip_base.with_suffix(".zip")
+    if zip_path.exists():
+        zip_path.unlink()
+    shutil.make_archive(str(zip_base), "zip", root_dir=DIST, base_dir=APP_NAME)
+
     print(f"\n打包完成：{target_dir / 'LexiArbiter.exe'}")
+    print(f"Release zip：{zip_path}")
     print("請保留整個 LexiArbiter 資料夾（含 exe、_internal/、configs/、assets/）一起分發。")
 
 
