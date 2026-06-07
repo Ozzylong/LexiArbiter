@@ -49,6 +49,9 @@ jobs:
           sips -z 512 512   "$SRC" --out "$ICONSET/icon_512x512.png"
           sips -z 1024 1024 "$SRC" --out "$ICONSET/icon_512x512@2x.png"
           iconutil -c icns "$ICONSET" -o assets/LexiArbiter_icon.icns
+          # iconset 只是轉檔用的中繼資料夾，留在 assets/ 會被 build_mac.py 一併
+          # 複製進 .app，最後讓 codesign --deep 誤判成 bundle 而失敗。轉完即刪。
+          rm -rf "$ICONSET"
 
       - name: Build .app bundle
         run: python build_mac.py

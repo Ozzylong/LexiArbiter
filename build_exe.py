@@ -32,6 +32,15 @@ ARCH = "x64"
 
 
 def main():
+    # GitHub Actions 的 Windows runner 為英文環境，stdout 預設編碼是 cp1252，
+    # print 中文（如「執行：」）會拋 UnicodeEncodeError 導致打包中斷。強制把
+    # stdout/stderr 切到 UTF-8（Python 3.7+ 才有 reconfigure）。
+    for _stream in (sys.stdout, sys.stderr):
+        try:
+            _stream.reconfigure(encoding="utf-8")
+        except (AttributeError, ValueError):
+            pass
+
     try:
         import PyInstaller  # noqa: F401
     except ImportError:
