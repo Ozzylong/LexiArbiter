@@ -28,12 +28,19 @@ def main():
     app.setApplicationName("LexiArbiter")
     app.setOrganizationName("LexiArbiter")
 
-    # 視窗 / 工作列 icon；找不到檔案就略過，不影響啟動
-    icon_path = app_root() / "assets" / "LexiArbiter_icon.ico"
-    if icon_path.exists():
+    # 視窗 / 工作列 icon；優先用 png（跨平台一致），找不到才退回 ico。
+    # 找不到任何 icon 就略過，不影響啟動。
+    assets_dir = app_root() / "assets"
+    icon_path = None
+    for candidate in (assets_dir / "LexiArbiter_icon.png",
+                      assets_dir / "LexiArbiter_icon.ico"):
+        if candidate.exists():
+            icon_path = candidate
+            break
+    if icon_path is not None:
         app.setWindowIcon(QIcon(str(icon_path)))
     else:
-        log.info("未找到 icon 檔，略過 setWindowIcon：%s", icon_path)
+        log.info("未找到 icon 檔，略過 setWindowIcon：%s", assets_dir)
 
     # log 寫不進預設位置時告知使用者 fallback 路徑，避免發生問題卻不知道 log 在哪。
     if used_fallback() and current_log_dir() is not None:

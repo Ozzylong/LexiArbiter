@@ -41,6 +41,16 @@ def user_preferences_path() -> Path:
     return configs_dir() / "user_preferences.json"
 
 
+def default_ui_font() -> str:
+    """依執行平台回傳預設 UI 字型名稱。各平台挑系統內建、能正確顯示繁中的字型，
+    避免使用者初次啟動時看到方框/缺字。"""
+    if sys.platform == "darwin":
+        return "PingFang TC"
+    if sys.platform.startswith("win"):
+        return "Microsoft JhengHei UI"
+    return "Noto Sans CJK TC"
+
+
 # ---------------------------------------------------------------------------
 # Data classes
 # ---------------------------------------------------------------------------
@@ -196,7 +206,7 @@ def list_annotation_modes() -> list[AnnotationMode]:
 DEFAULT_PREFERENCES: dict = {
     "active_annotation_mode": "legal_mtl",
     "ui": {
-        "font_family": "Microsoft JhengHei UI",
+        "font_family": default_ui_font(),
         "font_size": 14,
         "line_spacing": 1.5,
         "theme": "light",
