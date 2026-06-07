@@ -7,6 +7,7 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:   # Actions 分頁手動觸發，不用打 tag 也能測打包流程
 
 # release 上傳 asset 需要 contents: write 權限
 permissions:
@@ -37,7 +38,9 @@ jobs:
         run: python build_exe.py
 
       - name: Upload to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')   # 手動觸發(無tag)時跳過，不報錯
         uses: softprops/action-gh-release@v2
         with:
           files: dist/LexiArbiter-windows-x64.zip
+          draft: true                              # 先發草稿，驗過再手動 Publish
           generate_release_notes: true
