@@ -14,8 +14,16 @@ permissions:
 
 jobs:
   build-macos:
-    name: Build macOS .app (Apple Silicon)
-    runs-on: macos-latest   # 目前 = macOS 14 Sonoma, arm64
+    name: Build macOS .app (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false   # 一個架構失敗不要中斷另一個
+      matrix:
+        include:
+          - runner: macos-latest     # arm64 (Apple Silicon)
+            arch: arm64
+          - runner: macos-15-intel   # x86_64 (Intel)，GitHub 提供至 2027/08
+            arch: x86_64
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -59,10 +67,30 @@ jobs:
       - name: Verify codesign
         run: codesign --verify --verbose dist/LexiArbiter.app
 
+      - name: Upload build artifact
+        # 兩個架構的 zip 先各自上傳成 artifact，release job 再一次收齊發版，
+        # 避免平行 job 同時呼叫 action-gh-release 產生重複的草稿 release。
+        uses: actions/upload-artifact@v4
+        with:
+          name: LexiArbiter-macos-${{ matrix.arch }}
+          path: dist/LexiArbiter-macos-${{ matrix.arch }}.zip
+          if-no-files-found: error
+
+  release:
+    name: Upload to GitHub Release
+    needs: build-macos
+    if: startsWith(github.ref, 'refs/tags/')   # 手動觸發(無tag)時跳過，不報錯
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true   # 兩個 artifact 的 zip 攤平到同一層 dist/
+
       - name: Upload to GitHub Release
-        if: startsWith(github.ref, 'refs/tags/')   # 手動觸發(無tag)時跳過，不報錯
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/LexiArbiter-macos-arm64.zip
+          files: dist/LexiArbiter-macos-*.zip
           draft: true                              # 先發草稿，驗過再手動 Publish
           generate_release_notes: true
