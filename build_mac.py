@@ -18,7 +18,10 @@ The output is `dist/LexiArbiter.app/`，內部結構（macOS 的 one-dir = .app 
           LexiArbiter_icon.icns
         Info.plist
 
-打包流程末端會跑 ad-hoc codesign，讓 Apple Silicon 能執行（arm64 強制要求簽名），
+本腳本在 Apple Silicon 與 Intel Mac 上皆可執行，產出的 .app 架構跟隨打包機器
+（PyInstaller 不支援跨架構），zip 檔名會自動帶上 arm64 / x86_64。
+
+打包流程末端會跑 ad-hoc codesign（arm64 強制要求簽名，x86_64 簽了也無妨），
 再用 `ditto` 壓成 zip — `ditto` 比 `zip` 更可靠地保留 macOS metadata（包括
 codesign signature 與 bundle 結構）。
 
@@ -28,6 +31,7 @@ codesign signature 與 bundle 結構）。
 
 from __future__ import annotations
 
+import platform
 import shutil
 import subprocess
 import sys
@@ -38,7 +42,8 @@ HERE = Path(__file__).resolve().parent
 DIST = HERE / "dist"
 APP_NAME = "LexiArbiter"
 BUNDLE_ID = "com.lexiarbiter.app"
-ARCH = "arm64"
+# 跟隨打包機器的架構：Apple Silicon 上是 "arm64"、Intel Mac 上是 "x86_64"
+ARCH = platform.machine()
 
 
 def main():
@@ -97,8 +102,9 @@ def main():
     _sync_tree(HERE / "configs", macos_dir / "configs", "configs/")
     _sync_tree(HERE / "assets", macos_dir / "assets", "assets/")
 
-    # Ad-hoc codesign：免費、不需 Apple Developer 帳號，能讓 Apple Silicon
-    # 接受啟動。Gatekeeper 仍會擋（quarantine flag），使用者首次開啟需跑
+    # Ad-hoc codesign：免費、不需 Apple Developer 帳號，讓 Apple Silicon 接受
+    # 啟動（Intel 無此強制要求，簽了也無害，兩種架構統一處理）。
+    # Gatekeeper 仍會擋（quarantine flag），使用者首次開啟需跑
     # `xattr -dr com.apple.quarantine` —— 已在 README 寫明。
     # --deep 是為了一併簽 .app 內部所有 dylib / framework。
     print("執行 ad-hoc codesign...")

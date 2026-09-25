@@ -1,6 +1,6 @@
 # LexiArbiter
 
-針對台灣司法判決進行 multi-task learning 標註資料製作的桌面工具，支援 Windows 與 macOS (Apple Silicon)。
+針對台灣司法判決進行 multi-task learning 標註資料製作的桌面工具，支援 Windows 與 macOS（Apple Silicon 與 Intel）。
 讀取司法院 open data JSON 檔，用螢光筆方式為每一段文字同時套上多個分類標籤，最後一鍵匯出成模型訓練可直接用的 `.txt`（例如 `<P>大前提,非第一人稱|...</P>`）。
 
 
@@ -24,9 +24,14 @@
 
 > 解壓後請保持資料夾結構完整 —— `LexiArbiter.exe`、`_internal/`、`configs/`、`assets/` 要放在一起，不要只把 exe 抽出來。
 
-### macOS（Apple Silicon / M 系列晶片）
+### macOS
 
-1. 下載 `LexiArbiter-macos-arm64.zip` 並解壓，把 `LexiArbiter.app` 拖到 `/Applications`（或任何位置）。
+1. 依照你的晶片下載對應版本並解壓，把 `LexiArbiter.app` 拖到 `/Applications`（或任何位置）：
+   - **Apple Silicon（M 系列晶片）**：`LexiArbiter-macos-arm64.zip`
+   - **Intel 晶片**：`LexiArbiter-macos-x86_64.zip`
+
+   > 不確定自己是哪種晶片？點左上角  → 「關於這台 Mac」，看「晶片」（M 系列）或「處理器」（Intel）欄位。
+
 2. **首次開啟前**，打開 Terminal 跑這一行解除 macOS Gatekeeper 隔離：
 
    ```bash
@@ -35,7 +40,7 @@
 
 3. 之後雙擊 `LexiArbiter.app` 即可正常開啟。
 
-> 因為這是個人小工具未做 Apple Developer 簽名，首次開啟需要上述一次性步驟；若不執行會跳「app 已損壞」的錯誤訊息。Intel Mac 使用者可嘗試透過 Rosetta 2 執行，但官方未測試保證。
+> 因為這是個人小工具未做 Apple Developer 簽名，首次開啟需要上述一次性步驟；若不執行會跳「app 已損壞」的錯誤訊息。另外需要 **macOS 12 (Monterey) 以上**，較舊系統請先升級。
 
 ## 第一次使用
 
