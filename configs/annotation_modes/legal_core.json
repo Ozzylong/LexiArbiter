@@ -1,0 +1,30 @@
+{
+  "id": "legal_core",
+  "name": "法律判決核心段落（LS project-25 複查）",
+  "description": "對應 Label Studio project-25 的兩層階層標籤：視角（法院/原告或檢察官/被告）＋法院說理細分。供複查他人標註結果使用。",
+  "groups": [
+    {
+      "id": "legal_core",
+      "name": "核心段落",
+      "role": "primary",
+      "description": "第一層為視角（顏色：綠系=法院、紅=原告或檢察官、藍=被告），法院再細分三類。",
+      "labels": [
+        {"id": "court_judgment",  "name": "法院說理：心證與判斷",     "tag": "法院說理：心證與判斷",     "color": "#2E7D32", "shortcut": "Ctrl+1"},
+        {"id": "court_fact",      "name": "法院說理：事實及證據",     "tag": "法院說理：事實及證據",     "color": "#26A69A", "shortcut": "Ctrl+2"},
+        {"id": "court_citation",  "name": "法院說理：引用法規或裁判", "tag": "法院說理：引用法規或裁判", "color": "#D4E157", "shortcut": "Ctrl+3"},
+        {"id": "plaintiff_claim", "name": "原告或檢察官主張",         "tag": "原告或檢察官主張",         "color": "#EF5350", "shortcut": "Ctrl+4"},
+        {"id": "defendant_claim", "name": "被告主張",                 "tag": "被告主張",                 "color": "#42A5F5", "shortcut": "Ctrl+5"}
+      ]
+    }
+  ],
+  "export": {
+    "format": "p_tag",
+    "tag_order": ["legal_core"],
+    "tag_separator": ",",
+    "wrapper_open": "<P>",
+    "wrapper_close": "</P>",
+    "field_separator": "|",
+    "include_unannotated": false,
+    "require_all_groups": false
+  }
+}
