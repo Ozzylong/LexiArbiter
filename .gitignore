@@ -14,6 +14,7 @@ example/
 logs/
 .claude/
 documents/
+scripts/
 CLAUDE.md
 assets/*
 !assets/LexiArbiter_icon.ico
