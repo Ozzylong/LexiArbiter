@@ -122,9 +122,25 @@ def load_docx(path: Path | str):
     for block in iter_block_items(doc):
         # 處理一般段落
         if isinstance(block, Paragraph):
-            text = block.text.strip()
-            if not text:
-                continue
+            # 1. 將 .strip() 改為 .rstrip()，只清除尾部多餘的換行或空白，保留您原本手打在前面的空白縮排
+            text = block.text.rstrip()
+            #if not text.strip():
+            #    continue
+                
+            # 2. 自動抓取 Word 段落的「左縮排」與「首行縮排」設定，並轉換為全形空白
+            indent_spaces = ""
+            try:
+                left_indent = block.paragraph_format.left_indent
+                first_indent = block.paragraph_format.first_line_indent
+                total_pt = 0
+                if left_indent: total_pt += left_indent.pt
+                if first_indent: total_pt += first_indent.pt
+                
+                if total_pt > 0:
+                    # 假設一個全形字寬度約 12pt，將縮排量換算成全形空白數
+                    indent_spaces = " " * int(total_pt // 12)
+            except Exception:
+                pass
                 
             prefix = ""
             style_name = block.style.name if block.style else ""
@@ -136,22 +152,22 @@ def load_docx(path: Path | str):
                 prefix = "● "
             # 2. 針對未套用清單樣式、但手動點擊了「項目符號」的段落
             elif block._p.pPr is not None and block._p.pPr.numPr is not None:
-                # 阻擋 Word 的 XML 污染：如果樣式是「內文」，一律忽略隱藏編號，防止符號掉到下一行
                 if style_name not in ['Normal', '內文', 'Normal (Web)']:
                     prefix = "🔸 "
                     
-            text_parts.append(prefix + text)
+            # 3. 將自動計算的縮排、標題前綴與文字結合
+            text_parts.append(indent_spaces + prefix + text)
                 
         # 處理表格
         elif isinstance(block, Table):
-            text_parts.append("-" * 40)
+            text_parts.append(("-" * 40) + "我是表格 start" + ("-" * 40))
             for row in block.rows:
                 row_texts = []
                 for cell in row.cells:
                     cell_text = " ".join([p.text.strip() for p in cell.paragraphs if p.text.strip()])
                     row_texts.append(cell_text)
                 text_parts.append(" | ".join(row_texts))
-            text_parts.append("-" * 40)
+            text_parts.append(("-" * 40) + "我是表格 end" + ("-" * 40))
 
     # 2. 讀取註腳 (Footnotes)
     try:
@@ -166,11 +182,17 @@ def load_docx(path: Path | str):
             # 【關鍵修改】：強制指定微軟的 Word XML 命名空間
             ns = {'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'}
             
-            # 使用 xpath 配合明確的 namespace 來精準抓取
-            footnotes = footnotes_part.element.xpath('.//w:footnote', namespaces=ns)
+            # 解決 AttributeError: 'Part' object has no attribute 'element' 的問題
+            # 引入 parse_xml 並直接讀取該 Part 的二進位資料 (blob)
+            from docx.oxml import parse_xml
+            root = parse_xml(footnotes_part.blob)
+            
+            # 使用 xpath 從 root 抓取
+            footnotes = root.xpath('.//w:footnote', namespaces=ns)
             
             if footnotes:
-                text_parts.append("=" * 20 + " 以下為註腳 " + "=" * 20)
+                # 先用一個暫存列表來收集真正有文字的註腳
+                valid_footnotes = []
                 for fn in footnotes:
                     # 取得註腳 ID
                     fn_id = fn.get(f"{{{ns['w']}}}id")
@@ -179,7 +201,14 @@ def load_docx(path: Path | str):
                         fn_texts = fn.xpath('.//w:t/text()', namespaces=ns)
                         if fn_texts:
                             fn_content = "".join(fn_texts).strip()
-                            text_parts.append(f"[{fn_id}] {fn_content}")
+                            # 確保內容真的有字，不是空字串
+                            if fn_content:
+                                valid_footnotes.append(f"[{fn_id}] {fn_content}")
+                
+                # 只有在確實收集到有效註腳時，才將標題與內容加到 text_parts 中
+                if valid_footnotes:
+                    text_parts.append("=" * 20 + " 以下為註腳 " + "=" * 20)
+                    text_parts.extend(valid_footnotes)
     except Exception as e:
         log.warning("讀取註腳時發生錯誤：%s", e, exc_info=True)
 
