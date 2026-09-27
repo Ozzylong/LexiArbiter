@@ -524,8 +524,8 @@ class MainWindow(QMainWindow):
             start_dir = str(Path(self.doc.file_path).parent)
         path, _ = QFileDialog.getOpenFileName(
             self, "開啟檔案", start_dir,
-            "支援的格式 (*.json *.lexa *.txt);;判決 JSON (*.json);;"
-            "標註進度 (*.lexa);;模型匯出 (*.txt);;所有檔案 (*.*)"
+            "支援的格式 (*.json *.lexa *.txt *.docx);;判決 JSON (*.json);;"
+            "Word 檔 (*.docx);;標註進度 (*.lexa);;模型匯出 (*.txt);;所有檔案 (*.*)"
         )
         if path:
             self.load_file(path)

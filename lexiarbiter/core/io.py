@@ -17,8 +17,15 @@ from __future__ import annotations
 import json
 import logging
 import re
+import docx
 from pathlib import Path
 from typing import Optional
+from docx.document import Document as _Document
+from docx.oxml.text.paragraph import CT_P
+from docx.oxml.table import CT_Tbl
+from docx.table import _Cell, Table
+from docx.text.paragraph import Paragraph
+from docx.oxml.ns import qn
 
 from .config import AnnotationMode, ExportConfig
 from .models import Annotation, Document
@@ -90,6 +97,105 @@ def load_lexa(path: Path | str) -> Document:
     )
 
 
+def iter_block_items(parent):
+    if isinstance(parent, _Document):
+        parent_elm = parent.element.body
+    elif isinstance(parent, _Cell):
+        parent_elm = parent._tc
+    else:
+        raise ValueError("不支援的解析物件")
+
+    for child in parent_elm.iterchildren():
+        if isinstance(child, CT_P):
+            yield Paragraph(child, parent)
+        elif isinstance(child, CT_Tbl):
+            yield Table(child, parent)
+
+def load_docx(path: Path | str):
+    path = Path(path)
+    log.info("載入 DOCX：%s", path)
+    doc = docx.Document(path)
+    
+    text_parts = []
+    
+    # 1. 依序讀取主文與表格
+    for block in iter_block_items(doc):
+        # 處理一般段落
+        if isinstance(block, Paragraph):
+            text = block.text.strip()
+            if not text:
+                continue
+                
+            prefix = ""
+            style_name = block.style.name if block.style else ""
+            
+            # 1. 優先偵測視覺上的「標題」與「清單」樣式
+            if 'Heading' in style_name or '標題' in style_name:
+                prefix = "◆ "
+            elif 'List' in style_name or '清單' in style_name:
+                prefix = "● "
+            # 2. 針對未套用清單樣式、但手動點擊了「項目符號」的段落
+            elif block._p.pPr is not None and block._p.pPr.numPr is not None:
+                # 阻擋 Word 的 XML 污染：如果樣式是「內文」，一律忽略隱藏編號，防止符號掉到下一行
+                if style_name not in ['Normal', '內文', 'Normal (Web)']:
+                    prefix = "🔸 "
+                    
+            text_parts.append(prefix + text)
+                
+        # 處理表格
+        elif isinstance(block, Table):
+            text_parts.append("-" * 40)
+            for row in block.rows:
+                row_texts = []
+                for cell in row.cells:
+                    cell_text = " ".join([p.text.strip() for p in cell.paragraphs if p.text.strip()])
+                    row_texts.append(cell_text)
+                text_parts.append(" | ".join(row_texts))
+            text_parts.append("-" * 40)
+
+    # 2. 讀取註腳 (Footnotes)
+    try:
+        footnotes_part = None
+        for rel in doc.part.rels.values():
+            # 尋找關聯類型中包含 footnotes 的部分
+            if "footnotes" in rel.reltype:
+                footnotes_part = rel.target_part
+                break
+                
+        if footnotes_part:
+            # 【關鍵修改】：強制指定微軟的 Word XML 命名空間
+            ns = {'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'}
+            
+            # 使用 xpath 配合明確的 namespace 來精準抓取
+            footnotes = footnotes_part.element.xpath('.//w:footnote', namespaces=ns)
+            
+            if footnotes:
+                text_parts.append("=" * 20 + " 以下為註腳 " + "=" * 20)
+                for fn in footnotes:
+                    # 取得註腳 ID
+                    fn_id = fn.get(f"{{{ns['w']}}}id")
+                    if fn_id and int(fn_id) > 0:
+                        # 抓取該註腳內所有的文字節點
+                        fn_texts = fn.xpath('.//w:t/text()', namespaces=ns)
+                        if fn_texts:
+                            fn_content = "".join(fn_texts).strip()
+                            text_parts.append(f"[{fn_id}] {fn_content}")
+    except Exception as e:
+        log.warning("讀取註腳時發生錯誤：%s", e, exc_info=True)
+
+    full_text = "\n\n".join(text_parts)
+
+    return Document(
+        text=full_text,
+        annotations=[],
+        schema_id="",
+        source_filename=path.name,
+        source_meta={},
+        file_path=str(path),
+        dirty=True,
+    )
+
+
 def load_any(path: Path | str) -> Document:
     """Dispatch on extension.
 
@@ -102,6 +208,8 @@ def load_any(path: Path | str) -> Document:
         return load_lexa(path)
     if suffix == ".json":
         return load_judicial_json(path)
+    if suffix == ".docx":
+        return load_docx(path)
     raise ValueError(f"不支援的檔案類型：{suffix}")
 
 
