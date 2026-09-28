@@ -40,12 +40,16 @@ class ConceptSelectionDialog(QDialog):
         self.btn_ok = QPushButton("確定 (Enter)")
         self.btn_ok.setStyleSheet("background-color: #2196F3; color: white; font-weight: bold; padding: 6px; border-radius: 4px;")
         self.btn_ok.clicked.connect(self.accept)
-        self.btn_cancel = QPushButton("取消/不綁定")
+        self.btn_cancel = QPushButton("取消")
         self.btn_cancel.setStyleSheet("background-color: #546E7A; color: white; padding: 6px; border-radius: 4px;")
         self.btn_cancel.clicked.connect(self.reject)
+
+        # 將按鈕推到對話框的右下角
+        btn_layout.addStretch()
         
-        btn_layout.addWidget(self.btn_cancel)
+        # 將 OK 放在前面 (左邊)，Cancel 放在後面 (右邊)
         btn_layout.addWidget(self.btn_ok)
+        btn_layout.addWidget(self.btn_cancel)
         layout.addLayout(btn_layout)
 
         # 點擊清單時自動填入輸入框
