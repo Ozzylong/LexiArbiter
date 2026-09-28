@@ -413,13 +413,18 @@ class MainWindow(QMainWindow):
             return
 
         concept_id = None
-        # 如果使用者設定開啟 Popup，且當下有選取文字 (表示是新建標註)，則跳出概念選擇器
-        if self.prefs.behavior.get("show_concept_popup", True) and self.editor.has_selection():
-            dlg = ConceptSelectionDialog(self.doc.concepts, self)
+        # 如果使用者設定開啟 Popup，檢查是否為 term_definition 模式、是否開啟彈窗、以及是否有選取文字，則跳出概念選擇器
+        if self.mode.id == "term_definition" and self.prefs.behavior.get("show_concept_popup", True) and self.editor.has_selection():
+            
+            # 抓取畫面中反白的文字
+            selected_text = self.editor.textCursor().selectedText().strip()
+                
+            # 將選取的文字作為 default_text 傳入對話框
+            dlg = ConceptSelectionDialog(self.doc.concepts, default_text=selected_text, parent=self)
             if dlg.exec():
                 selected_id, new_name = dlg.get_result()
                 if new_name:
-                    # 使用者輸入了新概念，建立並加到全域字典
+                     # 建立新概念
                     concept_id = "C_" + uuid.uuid4().hex[:8]
                     self.doc.concepts[concept_id] = new_name
                     self.concept_panel.refresh(self.doc)
