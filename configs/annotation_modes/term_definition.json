@@ -12,14 +12,14 @@
           "id": "term",
           "name": "專業術語",
           "tag": "Term",
-          "color": "#FFCDD2",
+          "color": "#FFE082",
           "shortcut": "1"
         },
         {
           "id": "definition",
           "name": "解釋段落",
           "tag": "Def",
-          "color": "#C8E6C9",
+          "color": "#90CAF9",
           "shortcut": "2"
         }
       ]
