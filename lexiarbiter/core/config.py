@@ -226,6 +226,7 @@ DEFAULT_PREFERENCES: dict = {
         "confirm_unsaved_on_switch": True,
         "warn_partial_groups_on_export": True,
         "auto_popup_on_selection": True,
+        "show_concept_popup": True,  # 新增：標註時是否跳出概念選擇視窗
     },
 }
 

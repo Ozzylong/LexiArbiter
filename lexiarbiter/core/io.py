@@ -92,6 +92,7 @@ def load_lexa(path: Path | str) -> Document:
         schema_id=data.get("schema", ""),
         source_filename=src.get("filename", path.name),
         source_meta=src.get("meta", {}),
+        concepts=data.get("concepts", {}),  # 新增：讀取概念池
         file_path=str(path),
         dirty=False,
     )
@@ -264,6 +265,7 @@ def save_lexa(doc: Document, path: Path | str, schema: AnnotationMode,
             "filename": doc.source_filename,
             "meta": doc.source_meta,
         },
+        "concepts": doc.concepts,
         "text": doc.text,
         "annotations": [a.to_dict() for a in doc.sorted_annotations()],
     }
@@ -280,8 +282,8 @@ def save_lexa(doc: Document, path: Path | str, schema: AnnotationMode,
 # Export model-ready .txt
 # ---------------------------------------------------------------------------
 
-def _format_p_line(text: str, labels: dict[str, str], schema: AnnotationMode,
-                   exp: ExportConfig) -> str:
+def _format_p_line(text: str, labels: dict[str, str], concept_name: Optional[str],
+                   schema: AnnotationMode, exp: ExportConfig) -> str:
     parts: list[str] = []
     for gid in exp.tag_order:
         lid = labels.get(gid)
@@ -289,7 +291,11 @@ def _format_p_line(text: str, labels: dict[str, str], schema: AnnotationMode,
             continue
         lb = schema.label(gid, lid)
         if lb is not None:
-            parts.append(lb.tag)
+            # 若有綁定概念，附加至 Tag 後方 (例如 Term=過擬合)
+            if concept_name:
+                parts.append(f"{lb.tag}={concept_name}")
+            else:
+                parts.append(lb.tag)
     tag_blob = exp.tag_separator.join(parts)
     # In the user's example, \r\n inside the original text is preserved as the
     # raw text (the model's preprocessing strips it later).
@@ -326,7 +332,7 @@ def export_txt(doc: Document, path: Path | str, schema: AnnotationMode) -> dict:
     warnings: list[str] = []
 
     # 2) 對每個 segment 合併所有覆蓋它的 annotation labels。
-    raw_segments: list[tuple[int, int, dict[str, str]]] = []
+    raw_segments: list[tuple[int, int, dict[str, str], Optional[str]]] = []
     for i in range(len(sorted_points) - 1):
         s, e = sorted_points[i], sorted_points[i + 1]
         if s >= e:
@@ -334,6 +340,8 @@ def export_txt(doc: Document, path: Path | str, schema: AnnotationMode) -> dict:
         seg_labels: dict[str, str] = {}
         for a in doc.annotations:
             if a.start <= s and e <= a.end:
+                if a.concept_id: 
+                    seg_concept_id = a.concept_id
                 for gid, lid in a.labels.items():
                     if gid in seg_labels and seg_labels[gid] != lid:
                         # 同群組衝突理論上不會發生（apply_label 已禁止），
@@ -345,16 +353,17 @@ def export_txt(doc: Document, path: Path | str, schema: AnnotationMode) -> dict:
                         )
                     else:
                         seg_labels[gid] = lid
-        raw_segments.append((s, e, seg_labels))
+        raw_segments.append((s, e, seg_labels, seg_concept_id))
 
     # 3) 合併相鄰且 labels 完全相同的 segments，避免 boundary 切碎輸出。
     merged: list[tuple[int, int, dict[str, str]]] = []
-    for s, e, lbls in raw_segments:
-        if merged and merged[-1][1] == s and merged[-1][2] == lbls:
-            ps, _pe, plbls = merged[-1]
-            merged[-1] = (ps, e, plbls)
+    for s, e, lbls, cid in raw_segments:
+        if merged and merged[-1][1] == s and merged[-1][2] == lbls and merged[-1][3] == cid:
+            merged[-1] = (merged[-1][0], e, lbls, cid)
+            #ps, _pe, plbls = merged[-1]
+            #merged[-1] = (ps, e, plbls)
         else:
-            merged.append((s, e, lbls))
+            merged.append((s, e, lbls, cid))
 
     # 4) 逐段輸出。
     lines: list[str] = []
@@ -362,7 +371,7 @@ def export_txt(doc: Document, path: Path | str, schema: AnnotationMode) -> dict:
     unannotated_chars = 0
     written = 0
 
-    for s, e, lbls in merged:
+    for s, e, lbls, cid in merged:
         seg_text = text[s:e]
         if not seg_text:
             continue
@@ -378,7 +387,8 @@ def export_txt(doc: Document, path: Path | str, schema: AnnotationMode) -> dict:
                     warnings.append(
                         f"段落「{seg_text[:15]}…」缺少必填群組：{', '.join(missing)}"
                     )
-            lines.append(_format_p_line(seg_text, lbls, schema, exp))
+            concept_name = doc.concepts.get(cid) if cid else None
+            lines.append(_format_p_line(seg_text, lbls, concept_name, schema, exp))
             written += 1
         else:
             if exp.include_unannotated and seg_text.strip():

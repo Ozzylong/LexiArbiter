@@ -6,6 +6,7 @@ import logging
 import os
 import re
 import sys
+import uuid
 from pathlib import Path
 from typing import Optional
 
@@ -32,6 +33,7 @@ from .core.logger import current_log_dir
 from .core.models import Annotation, Document, detect_same_group_conflicts
 from .widgets.editor import AnnotationEditor
 from .widgets.file_panel import FilePanel
+from .widgets.concept_panel import ConceptSelectionDialog, ConceptSidebar
 
 
 # Autosave cadence. 60s is a good compromise — short enough that worst-case
@@ -106,9 +108,17 @@ class MainWindow(QMainWindow):
         self.file_panel = FilePanel()
         self.file_panel.file_open_requested.connect(self._handle_file_open_requested)
 
+        self.concept_panel = ConceptSidebar() # 新增概念側欄
+
+        # 右側垂直切分 (上方檔案、下方概念)
+        right_splitter = QSplitter(Qt.Vertical)
+        right_splitter.addWidget(self.file_panel)
+        right_splitter.addWidget(self.concept_panel)
+        right_splitter.setSizes([500, 320])
+
         splitter = QSplitter(Qt.Horizontal)
         splitter.addWidget(self.editor)
-        splitter.addWidget(self.file_panel)
+        splitter.addWidget(right_splitter)
         splitter.setStretchFactor(0, 1)
         splitter.setStretchFactor(1, 0)
         splitter.setSizes([900, 320])
@@ -401,6 +411,23 @@ class MainWindow(QMainWindow):
         if self.doc is None:
             self.status.showMessage("請先開啟一個檔案再進行標註。", 4000)
             return
+
+        concept_id = None
+        # 如果使用者設定開啟 Popup，且當下有選取文字 (表示是新建標註)，則跳出概念選擇器
+        if self.prefs.behavior.get("show_concept_popup", True) and self.editor.has_selection():
+            dlg = ConceptSelectionDialog(self.doc.concepts, self)
+            if dlg.exec():
+                selected_id, new_name = dlg.get_result()
+                if new_name:
+                    # 使用者輸入了新概念，建立並加到全域字典
+                    concept_id = "C_" + uuid.uuid4().hex[:8]
+                    self.doc.concepts[concept_id] = new_name
+                    self.concept_panel.refresh(self.doc)
+                else:
+                    concept_id = selected_id
+            else:
+                return # 使用者按取消，放棄標註
+       
         try:
             if not self.editor.has_selection():
                 ann_id = self.editor.annotation_at_cursor()
@@ -417,6 +444,7 @@ class MainWindow(QMainWindow):
                 ):
                     return
                 ann.labels[group_id] = label_id
+                if concept_id: ann.concept_id = concept_id
                 self.doc.dirty = True
                 self.editor.refresh_highlights()
                 self._refresh_status()
@@ -436,12 +464,13 @@ class MainWindow(QMainWindow):
                 ):
                     return
                 ann.labels[group_id] = label_id
+                if concept_id: ann.concept_id = concept_id
             else:
                 # 跨群組重疊應允許並存（每個群組是獨立任務）；只在「同群組」
                 # 重疊時才提示，因為同群組 label 互斥。
                 if not self._resolve_same_group_overlap(s, e, group_id):
                     return
-                ann = Annotation(start=s, end=e, labels={group_id: label_id})
+                ann = Annotation(start=s, end=e, labels={group_id: label_id}, concept_id=concept_id)
                 self.doc.add_annotation(ann)
             self.doc.dirty = True
             self.editor.refresh_highlights()
@@ -630,6 +659,7 @@ class MainWindow(QMainWindow):
 
         self.doc = doc
         self.editor.attach(doc, self.mode, self.prefs)
+        self.concept_panel.refresh(doc) # 刷新概念側欄
         self._update_window_title()
         # Update file panel to the directory of this doc.
         self.file_panel.set_directory(Path(path).parent, Path(path))
