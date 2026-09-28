@@ -8,10 +8,10 @@ from PySide6.QtWidgets import (
 
 class ConceptSelectionDialog(QDialog):
     """彈出視窗：讓使用者從現有概念挑選，或輸入新概念。"""
-    def __init__(self, concepts: dict[str, str], parent=None):
+    def __init__(self, concepts: dict[str, str], default_text: str = "", parent=None):
         super().__init__(parent)
         self.setWindowTitle("選擇或新增對應概念")
-        self.resize(300, 400)
+        self.resize(350, 450)
         
         layout = QVBoxLayout(self)
         
@@ -27,13 +27,19 @@ class ConceptSelectionDialog(QDialog):
         layout.addWidget(QLabel("2. 或直接輸入新概念："))
         self.input_edit = QLineEdit()
         self.input_edit.setPlaceholderText("輸入新術語概念...")
+        # 自動將反白的文字填入輸入框
+        self.input_edit.setText(default_text) 
+        # 選取框內所有文字，方便使用者如果不滿意可以直接打字覆蓋
+        self.input_edit.selectAll()
         layout.addWidget(self.input_edit)
 
         # 按鈕區
         btn_layout = QHBoxLayout()
         self.btn_ok = QPushButton("確定 (Enter)")
+        self.btn_ok.setStyleSheet("background-color: #2196F3; color: white; font-weight: bold; padding: 6px; border-radius: 4px;")
         self.btn_ok.clicked.connect(self.accept)
         self.btn_cancel = QPushButton("取消/不綁定")
+        self.btn_cancel.setStyleSheet("background-color: #546E7A; color: white; padding: 6px; border-radius: 4px;")
         self.btn_cancel.clicked.connect(self.reject)
         
         btn_layout.addWidget(self.btn_cancel)
