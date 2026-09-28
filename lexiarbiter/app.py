@@ -109,6 +109,7 @@ class MainWindow(QMainWindow):
         self.file_panel.file_open_requested.connect(self._handle_file_open_requested)
 
         self.concept_panel = ConceptSidebar() # 新增概念側欄
+        self.concept_panel.setVisible(self.mode.id == "term_definition") #根據初始的標註模式，決定是否顯示概念側欄
 
         # 右側垂直切分 (上方檔案、下方概念)
         right_splitter = QSplitter(Qt.Vertical)
@@ -867,6 +868,7 @@ class MainWindow(QMainWindow):
                     a.setChecked(a.data() == self.mode.id)
                 return
         self.mode = target
+        self.concept_panel.setVisible(self.mode.id == "term_definition")
         if persist:
             self.prefs.active_mode_id = target.id
             try:
