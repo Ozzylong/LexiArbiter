@@ -23,6 +23,8 @@ class ConceptSelectionDialog(QDialog):
             self.list_widget.addItem(name)
             self._concept_map[name] = cid
         layout.addWidget(self.list_widget)
+        # 將清單依照筆畫/字母順序排序
+        self.list_widget.sortItems(Qt.AscendingOrder)
 
         layout.addWidget(QLabel("2. 或直接輸入新概念："))
         self.input_edit = QLineEdit()
@@ -69,7 +71,7 @@ class ConceptSidebar(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(8, 8, 8, 8)
         
-        title = QLabel("文件概念池 (Concepts)")
+        title = QLabel("文件概念清單 (Concepts)")
         f = title.font()
         f.setBold(True)
         title.setFont(f)
@@ -85,3 +87,6 @@ class ConceptSidebar(QWidget):
             return
         for cid, name in doc.concepts.items():
             self.list_widget.addItem(f"● {name}")
+
+        # 讓側邊欄的概念清單也依照筆畫/字母自動排序
+        self.list_widget.sortItems(Qt.AscendingOrder)
