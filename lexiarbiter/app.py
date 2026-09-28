@@ -14,7 +14,7 @@ log = logging.getLogger(__name__)
 
 from PySide6.QtCore import Qt, QPoint, QSize, QTimer
 from PySide6.QtGui import (
-    QAction, QActionGroup, QColor, QIcon, QPainter, QPalette, QPixmap,
+    QAction, QActionGroup, QColor, QIcon, QPainter, QPalette, QPixmap, QKeySequence,
 )
 from PySide6.QtWidgets import (
     QApplication, QFileDialog, QFrame, QHBoxLayout, QLabel, QMainWindow, QMenu,
@@ -209,6 +209,11 @@ class MainWindow(QMainWindow):
         self.act_remove_ann.setShortcut(self.prefs.app_shortcut("remove_annotation", "Ctrl+D"))
         self.act_remove_ann.triggered.connect(self.action_remove_annotation_at_cursor)
         m_edit.addAction(self.act_remove_ann)
+        # 在主視窗的編輯選單加入全域複製，讓 Ctrl+C 隨時生效
+        self.act_copy = QAction("複製選取文字", self)
+        self.act_copy.setShortcut("Ctrl+C")
+        self.act_copy.triggered.connect(self.editor.copy)
+        m_edit.addAction(self.act_copy)
 
         m_edit.addSeparator()
         self.act_next_file = QAction("下一個檔案", self)
@@ -901,6 +906,14 @@ class MainWindow(QMainWindow):
             return
         has_selection = sel_end > sel_start
 
+        # 如果有選取文字，在選單最上方加入「複製」選項
+        if has_selection:
+            act_copy = QAction("複製選取文字", menu)
+            act_copy.setShortcut("Ctrl+C")  # 提示使用者亦可用快捷鍵
+            act_copy.triggered.connect(self.editor.copy)  # 直接呼叫 QTextEdit 內建的複製功能
+            menu.addAction(act_copy)
+            menu.addSeparator()
+
         # If hovering over an annotation, show its info.
         if ann_id is not None:
             ann = self.doc.find_annotation(ann_id)
@@ -950,9 +963,28 @@ class MainWindow(QMainWindow):
             return
 
         menu = QMenu(self)
+
+        # 直接攔截選單的鍵盤事件，強行捕捉 Ctrl+C
+        def _menu_key_press(event):
+            if event.matches(QKeySequence.Copy):
+                self.editor.copy()
+                menu.close()
+            else:
+                QMenu.keyPressEvent(menu, event)
+        menu.keyPressEvent = _menu_key_press
+
         wa = QWidgetAction(menu)
         wa.setDefaultWidget(self._make_quick_label_widget(menu))
         menu.addAction(wa)
+
+        # 在快速選單中加入複製選項，並攔截 Ctrl+C
+        menu.addSeparator()
+        act_copy = QAction("複製選取文字", menu)
+        act_copy.setShortcut("Ctrl+C")
+        # 複製文字後，順便關閉這個小選單，讓畫面保持乾淨
+        act_copy.triggered.connect(lambda: (self.editor.copy(), menu.close()))
+        menu.addAction(act_copy)
+
         # 避開剛放開滑鼠的位置，往下偏 8px。Qt 會自動處理畫面邊界。
         menu.exec(global_pos + QPoint(0, 8))
 
