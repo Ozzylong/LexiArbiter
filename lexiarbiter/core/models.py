@@ -21,6 +21,7 @@ class Annotation:
     labels: dict[str, str] = field(default_factory=dict)
     id: str = field(default_factory=lambda: uuid.uuid4().hex[:12])
     note: str = ""
+    concept_id: Optional[str] = None  # 新增：關聯的概念 ID
 
     def overlaps(self, other: "Annotation") -> bool:
         return not (self.end <= other.start or other.end <= self.start)
@@ -39,6 +40,7 @@ class Annotation:
             end=int(data["end"]),
             labels=dict(data.get("labels", {})),
             note=data.get("note", ""),
+            concept_id=data.get("concept_id")  # 讀取概念 ID
         )
 
 
@@ -51,6 +53,7 @@ class Document:
     schema_id: str = ""
     source_filename: str = ""
     source_meta: dict = field(default_factory=dict)
+    concepts: dict[str, str] = field(default_factory=dict)  # 新增：全域概念池 {concept_id: concept_name}
     file_path: Optional[str] = None  # path of the loaded .json or .lexa
     dirty: bool = False
 

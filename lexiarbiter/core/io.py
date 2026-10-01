@@ -17,8 +17,15 @@ from __future__ import annotations
 import json
 import logging
 import re
+import docx
 from pathlib import Path
 from typing import Optional
+from docx.document import Document as _Document
+from docx.oxml.text.paragraph import CT_P
+from docx.oxml.table import CT_Tbl
+from docx.table import _Cell, Table
+from docx.text.paragraph import Paragraph
+from docx.oxml.ns import qn
 
 from .config import AnnotationMode, ExportConfig
 from .models import Annotation, Document
@@ -85,8 +92,137 @@ def load_lexa(path: Path | str) -> Document:
         schema_id=data.get("schema", ""),
         source_filename=src.get("filename", path.name),
         source_meta=src.get("meta", {}),
+        concepts=data.get("concepts", {}),  # 新增：讀取概念池
         file_path=str(path),
         dirty=False,
+    )
+
+
+def iter_block_items(parent):
+    if isinstance(parent, _Document):
+        parent_elm = parent.element.body
+    elif isinstance(parent, _Cell):
+        parent_elm = parent._tc
+    else:
+        raise ValueError("不支援的解析物件")
+
+    for child in parent_elm.iterchildren():
+        if isinstance(child, CT_P):
+            yield Paragraph(child, parent)
+        elif isinstance(child, CT_Tbl):
+            yield Table(child, parent)
+
+def load_docx(path: Path | str):
+    path = Path(path)
+    log.info("載入 DOCX：%s", path)
+    doc = docx.Document(path)
+    
+    text_parts = []
+    
+    # 1. 依序讀取主文與表格
+    for block in iter_block_items(doc):
+        # 處理一般段落
+        if isinstance(block, Paragraph):
+            # 1. 將 .strip() 改為 .rstrip()，只清除尾部多餘的換行或空白，保留您原本手打在前面的空白縮排
+            text = block.text.rstrip()
+            #if not text.strip():
+            #    continue
+                
+            # 2. 自動抓取 Word 段落的「左縮排」與「首行縮排」設定，並轉換為全形空白
+            indent_spaces = ""
+            try:
+                left_indent = block.paragraph_format.left_indent
+                first_indent = block.paragraph_format.first_line_indent
+                total_pt = 0
+                if left_indent: total_pt += left_indent.pt
+                if first_indent: total_pt += first_indent.pt
+                
+                if total_pt > 0:
+                    # 假設一個全形字寬度約 12pt，將縮排量換算成全形空白數
+                    indent_spaces = " " * int(total_pt // 12)
+            except Exception:
+                pass
+                
+            prefix = ""
+            style_name = block.style.name if block.style else ""
+            
+            # 1. 優先偵測視覺上的「標題」與「清單」樣式
+            if 'Heading' in style_name or '標題' in style_name:
+                prefix = "◆ "
+            elif 'List' in style_name or '清單' in style_name:
+                prefix = "● "
+            # 2. 針對未套用清單樣式、但手動點擊了「項目符號」的段落
+            elif block._p.pPr is not None and block._p.pPr.numPr is not None:
+                if style_name not in ['Normal', '內文', 'Normal (Web)']:
+                    prefix = "🔸 "
+                    
+            # 3. 將自動計算的縮排、標題前綴與文字結合
+            text_parts.append(indent_spaces + prefix + text)
+                
+        # 處理表格
+        elif isinstance(block, Table):
+            text_parts.append(("-" * 40) + "我是表格 start" + ("-" * 40))
+            for row in block.rows:
+                row_texts = []
+                for cell in row.cells:
+                    cell_text = " ".join([p.text.strip() for p in cell.paragraphs if p.text.strip()])
+                    row_texts.append(cell_text)
+                text_parts.append(" | ".join(row_texts))
+            text_parts.append(("-" * 40) + "我是表格 end" + ("-" * 40))
+
+    # 2. 讀取註腳 (Footnotes)
+    try:
+        footnotes_part = None
+        for rel in doc.part.rels.values():
+            # 尋找關聯類型中包含 footnotes 的部分
+            if "footnotes" in rel.reltype:
+                footnotes_part = rel.target_part
+                break
+                
+        if footnotes_part:
+            # 【關鍵修改】：強制指定微軟的 Word XML 命名空間
+            ns = {'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'}
+            
+            # 解決 AttributeError: 'Part' object has no attribute 'element' 的問題
+            # 引入 parse_xml 並直接讀取該 Part 的二進位資料 (blob)
+            from docx.oxml import parse_xml
+            root = parse_xml(footnotes_part.blob)
+            
+            # 使用 xpath 從 root 抓取
+            footnotes = root.xpath('.//w:footnote', namespaces=ns)
+            
+            if footnotes:
+                # 先用一個暫存列表來收集真正有文字的註腳
+                valid_footnotes = []
+                for fn in footnotes:
+                    # 取得註腳 ID
+                    fn_id = fn.get(f"{{{ns['w']}}}id")
+                    if fn_id and int(fn_id) > 0:
+                        # 抓取該註腳內所有的文字節點
+                        fn_texts = fn.xpath('.//w:t/text()', namespaces=ns)
+                        if fn_texts:
+                            fn_content = "".join(fn_texts).strip()
+                            # 確保內容真的有字，不是空字串
+                            if fn_content:
+                                valid_footnotes.append(f"[{fn_id}] {fn_content}")
+                
+                # 只有在確實收集到有效註腳時，才將標題與內容加到 text_parts 中
+                if valid_footnotes:
+                    text_parts.append("=" * 20 + " 以下為註腳 " + "=" * 20)
+                    text_parts.extend(valid_footnotes)
+    except Exception as e:
+        log.warning("讀取註腳時發生錯誤：%s", e, exc_info=True)
+
+    full_text = "\n\n".join(text_parts)
+
+    return Document(
+        text=full_text,
+        annotations=[],
+        schema_id="",
+        source_filename=path.name,
+        source_meta={},
+        file_path=str(path),
+        dirty=True,
     )
 
 
@@ -102,6 +238,8 @@ def load_any(path: Path | str) -> Document:
         return load_lexa(path)
     if suffix == ".json":
         return load_judicial_json(path)
+    if suffix == ".docx":
+        return load_docx(path)
     raise ValueError(f"不支援的檔案類型：{suffix}")
 
 
@@ -127,6 +265,7 @@ def save_lexa(doc: Document, path: Path | str, schema: AnnotationMode,
             "filename": doc.source_filename,
             "meta": doc.source_meta,
         },
+        "concepts": doc.concepts,
         "text": doc.text,
         "annotations": [a.to_dict() for a in doc.sorted_annotations()],
     }
@@ -143,8 +282,8 @@ def save_lexa(doc: Document, path: Path | str, schema: AnnotationMode,
 # Export model-ready .txt
 # ---------------------------------------------------------------------------
 
-def _format_p_line(text: str, labels: dict[str, str], schema: AnnotationMode,
-                   exp: ExportConfig) -> str:
+def _format_p_line(text: str, labels: dict[str, str], concept_name: Optional[str],
+                   schema: AnnotationMode, exp: ExportConfig) -> str:
     parts: list[str] = []
     for gid in exp.tag_order:
         lid = labels.get(gid)
@@ -152,7 +291,11 @@ def _format_p_line(text: str, labels: dict[str, str], schema: AnnotationMode,
             continue
         lb = schema.label(gid, lid)
         if lb is not None:
-            parts.append(lb.tag)
+            # 若有綁定概念，附加至 Tag 後方 (例如 Term=過擬合)
+            if concept_name:
+                parts.append(f"{lb.tag}={concept_name}")
+            else:
+                parts.append(lb.tag)
     tag_blob = exp.tag_separator.join(parts)
     # In the user's example, \r\n inside the original text is preserved as the
     # raw text (the model's preprocessing strips it later).
@@ -189,7 +332,7 @@ def export_txt(doc: Document, path: Path | str, schema: AnnotationMode) -> dict:
     warnings: list[str] = []
 
     # 2) 對每個 segment 合併所有覆蓋它的 annotation labels。
-    raw_segments: list[tuple[int, int, dict[str, str]]] = []
+    raw_segments: list[tuple[int, int, dict[str, str], Optional[str]]] = []
     for i in range(len(sorted_points) - 1):
         s, e = sorted_points[i], sorted_points[i + 1]
         if s >= e:
@@ -197,6 +340,8 @@ def export_txt(doc: Document, path: Path | str, schema: AnnotationMode) -> dict:
         seg_labels: dict[str, str] = {}
         for a in doc.annotations:
             if a.start <= s and e <= a.end:
+                if a.concept_id: 
+                    seg_concept_id = a.concept_id
                 for gid, lid in a.labels.items():
                     if gid in seg_labels and seg_labels[gid] != lid:
                         # 同群組衝突理論上不會發生（apply_label 已禁止），
@@ -208,16 +353,17 @@ def export_txt(doc: Document, path: Path | str, schema: AnnotationMode) -> dict:
                         )
                     else:
                         seg_labels[gid] = lid
-        raw_segments.append((s, e, seg_labels))
+        raw_segments.append((s, e, seg_labels, seg_concept_id))
 
     # 3) 合併相鄰且 labels 完全相同的 segments，避免 boundary 切碎輸出。
     merged: list[tuple[int, int, dict[str, str]]] = []
-    for s, e, lbls in raw_segments:
-        if merged and merged[-1][1] == s and merged[-1][2] == lbls:
-            ps, _pe, plbls = merged[-1]
-            merged[-1] = (ps, e, plbls)
+    for s, e, lbls, cid in raw_segments:
+        if merged and merged[-1][1] == s and merged[-1][2] == lbls and merged[-1][3] == cid:
+            merged[-1] = (merged[-1][0], e, lbls, cid)
+            #ps, _pe, plbls = merged[-1]
+            #merged[-1] = (ps, e, plbls)
         else:
-            merged.append((s, e, lbls))
+            merged.append((s, e, lbls, cid))
 
     # 4) 逐段輸出。
     lines: list[str] = []
@@ -225,7 +371,7 @@ def export_txt(doc: Document, path: Path | str, schema: AnnotationMode) -> dict:
     unannotated_chars = 0
     written = 0
 
-    for s, e, lbls in merged:
+    for s, e, lbls, cid in merged:
         seg_text = text[s:e]
         if not seg_text:
             continue
@@ -241,7 +387,8 @@ def export_txt(doc: Document, path: Path | str, schema: AnnotationMode) -> dict:
                     warnings.append(
                         f"段落「{seg_text[:15]}…」缺少必填群組：{', '.join(missing)}"
                     )
-            lines.append(_format_p_line(seg_text, lbls, schema, exp))
+            concept_name = doc.concepts.get(cid) if cid else None
+            lines.append(_format_p_line(seg_text, lbls, concept_name, schema, exp))
             written += 1
         else:
             if exp.include_unannotated and seg_text.strip():

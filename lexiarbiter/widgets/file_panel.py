@@ -42,9 +42,9 @@ from PySide6.QtWidgets import (
 
 
 _EXTS = (".json", ".lexa", ".txt")
-_TAB_ORDER: tuple[str, ...] = (".json", ".lexa", ".txt")
+_TAB_ORDER: tuple[str, ...] = ("raw", ".lexa", ".txt")
 _TAB_LABELS: dict[str, str] = {
-    ".json": "原始檔 .json",
+    "raw": "原始檔",
     ".lexa": "標註檔 .lexa",
     ".txt": "模型檔 .txt",
 }
@@ -155,8 +155,18 @@ class FilePanel(QWidget):
             # 不應該讓使用者誤點而把 doc.file_path 指到 autosave 檔。
             if ext == ".lexa" and ".autosave." in entry.name:
                 continue
-            if ext in by_ext:
-                by_ext[ext].append(entry)
+
+            # 將 .json 與 .docx 都分派給 "raw" tab
+            tab_key = None
+            if ext in (".json", ".docx"):
+                tab_key = "raw"
+            elif ext == ".lexa":
+                tab_key = ".lexa"
+            elif ext == ".txt":
+                tab_key = ".txt"
+
+            if tab_key in by_ext:
+                by_ext[tab_key].append(entry)
 
         lexa_stems = {p.stem for p in by_ext[".lexa"]}
 
@@ -185,7 +195,8 @@ class FilePanel(QWidget):
 
                 prefix = ""
                 tooltip_lines = [entry.name]
-                if ext == ".json" and entry.stem in lexa_stems:
+                # 將原本判斷 ".json" 改為判斷 "raw"
+                if ext == "raw" and entry.stem in lexa_stems:
                     prefix = "◐ "
                     tooltip_lines.append("• 已有對應 .lexa 標註進度")
                 if is_current:
@@ -200,7 +211,7 @@ class FilePanel(QWidget):
                 # Bold the sibling .json row of the currently-open .lexa,
                 # even though that .json itself isn't the active document.
                 bold = is_current or (
-                    ext == ".json"
+                    ext == "raw"
                     and current_lexa_stem is not None
                     and entry.stem == current_lexa_stem
                 )
@@ -249,6 +260,13 @@ class FilePanel(QWidget):
 
     def _switch_to_tab_for(self, path: Path) -> None:
         ext = path.suffix.lower()
-        if ext not in _TAB_ORDER:
+        if ext in (".json", ".docx"):
+            tab_key = "raw"
+        elif ext == ".lexa":
+            tab_key = ".lexa"
+        elif ext == ".txt":
+            tab_key = ".txt"
+        else:
             return
-        self.tabs.setCurrentIndex(_TAB_ORDER.index(ext))
+        if tab_key in _TAB_ORDER:
+            self.tabs.setCurrentIndex(_TAB_ORDER.index(tab_key))

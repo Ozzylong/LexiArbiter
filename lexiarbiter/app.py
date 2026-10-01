@@ -6,6 +6,7 @@ import logging
 import os
 import re
 import sys
+import uuid
 from pathlib import Path
 from typing import Optional
 
@@ -13,7 +14,7 @@ log = logging.getLogger(__name__)
 
 from PySide6.QtCore import Qt, QPoint, QSize, QTimer
 from PySide6.QtGui import (
-    QAction, QActionGroup, QColor, QIcon, QPainter, QPalette, QPixmap,
+    QAction, QActionGroup, QColor, QIcon, QPainter, QPalette, QPixmap, QKeySequence,
 )
 from PySide6.QtWidgets import (
     QApplication, QFileDialog, QFrame, QHBoxLayout, QLabel, QMainWindow, QMenu,
@@ -32,6 +33,7 @@ from .core.logger import current_log_dir
 from .core.models import Annotation, Document, detect_same_group_conflicts
 from .widgets.editor import AnnotationEditor
 from .widgets.file_panel import FilePanel
+from .widgets.concept_panel import ConceptSelectionDialog, ConceptSidebar
 
 
 # Autosave cadence. 60s is a good compromise — short enough that worst-case
@@ -106,9 +108,18 @@ class MainWindow(QMainWindow):
         self.file_panel = FilePanel()
         self.file_panel.file_open_requested.connect(self._handle_file_open_requested)
 
+        self.concept_panel = ConceptSidebar() # 新增概念側欄
+        self.concept_panel.setVisible(self.mode.id == "term_definition") #根據初始的標註模式，決定是否顯示概念側欄
+
+        # 右側垂直切分 (上方檔案、下方概念)
+        right_splitter = QSplitter(Qt.Vertical)
+        right_splitter.addWidget(self.file_panel)
+        right_splitter.addWidget(self.concept_panel)
+        right_splitter.setSizes([500, 320])
+
         splitter = QSplitter(Qt.Horizontal)
         splitter.addWidget(self.editor)
-        splitter.addWidget(self.file_panel)
+        splitter.addWidget(right_splitter)
         splitter.setStretchFactor(0, 1)
         splitter.setStretchFactor(1, 0)
         splitter.setSizes([900, 320])
@@ -198,6 +209,11 @@ class MainWindow(QMainWindow):
         self.act_remove_ann.setShortcut(self.prefs.app_shortcut("remove_annotation", "Ctrl+D"))
         self.act_remove_ann.triggered.connect(self.action_remove_annotation_at_cursor)
         m_edit.addAction(self.act_remove_ann)
+        # 在主視窗的編輯選單加入全域複製，讓 Ctrl+C 隨時生效
+        self.act_copy = QAction("複製選取文字", self)
+        self.act_copy.setShortcut("Ctrl+C")
+        self.act_copy.triggered.connect(self.editor.copy)
+        m_edit.addAction(self.act_copy)
 
         m_edit.addSeparator()
         self.act_next_file = QAction("下一個檔案", self)
@@ -401,6 +417,28 @@ class MainWindow(QMainWindow):
         if self.doc is None:
             self.status.showMessage("請先開啟一個檔案再進行標註。", 4000)
             return
+
+        concept_id = None
+        # 如果使用者設定開啟 Popup，檢查是否為 term_definition 模式、是否開啟彈窗、以及是否有選取文字，則跳出概念選擇器
+        if self.mode.id == "term_definition" and self.prefs.behavior.get("show_concept_popup", True) and self.editor.has_selection():
+            
+            # 抓取畫面中反白的文字
+            selected_text = self.editor.textCursor().selectedText().strip()
+                
+            # 將選取的文字作為 default_text 傳入對話框
+            dlg = ConceptSelectionDialog(self.doc.concepts, default_text=selected_text, parent=self)
+            if dlg.exec():
+                selected_id, new_name = dlg.get_result()
+                if new_name:
+                     # 建立新概念
+                    concept_id = "C_" + uuid.uuid4().hex[:8]
+                    self.doc.concepts[concept_id] = new_name
+                    self.concept_panel.refresh(self.doc)
+                else:
+                    concept_id = selected_id
+            else:
+                return # 使用者按取消，放棄標註
+       
         try:
             if not self.editor.has_selection():
                 ann_id = self.editor.annotation_at_cursor()
@@ -417,6 +455,7 @@ class MainWindow(QMainWindow):
                 ):
                     return
                 ann.labels[group_id] = label_id
+                if concept_id: ann.concept_id = concept_id
                 self.doc.dirty = True
                 self.editor.refresh_highlights()
                 self._refresh_status()
@@ -436,12 +475,13 @@ class MainWindow(QMainWindow):
                 ):
                     return
                 ann.labels[group_id] = label_id
+                if concept_id: ann.concept_id = concept_id
             else:
                 # 跨群組重疊應允許並存（每個群組是獨立任務）；只在「同群組」
                 # 重疊時才提示，因為同群組 label 互斥。
                 if not self._resolve_same_group_overlap(s, e, group_id):
                     return
-                ann = Annotation(start=s, end=e, labels={group_id: label_id})
+                ann = Annotation(start=s, end=e, labels={group_id: label_id}, concept_id=concept_id)
                 self.doc.add_annotation(ann)
             self.doc.dirty = True
             self.editor.refresh_highlights()
@@ -524,8 +564,8 @@ class MainWindow(QMainWindow):
             start_dir = str(Path(self.doc.file_path).parent)
         path, _ = QFileDialog.getOpenFileName(
             self, "開啟檔案", start_dir,
-            "支援的格式 (*.json *.lexa *.txt);;判決 JSON (*.json);;"
-            "標註進度 (*.lexa);;模型匯出 (*.txt);;所有檔案 (*.*)"
+            "支援的格式 (*.json *.lexa *.txt *.docx);;判決 JSON (*.json);;"
+            "Word 檔 (*.docx);;標註進度 (*.lexa);;模型匯出 (*.txt);;所有檔案 (*.*)"
         )
         if path:
             self.load_file(path)
@@ -630,6 +670,7 @@ class MainWindow(QMainWindow):
 
         self.doc = doc
         self.editor.attach(doc, self.mode, self.prefs)
+        self.concept_panel.refresh(doc) # 刷新概念側欄
         self._update_window_title()
         # Update file panel to the directory of this doc.
         self.file_panel.set_directory(Path(path).parent, Path(path))
@@ -832,6 +873,7 @@ class MainWindow(QMainWindow):
                     a.setChecked(a.data() == self.mode.id)
                 return
         self.mode = target
+        self.concept_panel.setVisible(self.mode.id == "term_definition")
         if persist:
             self.prefs.active_mode_id = target.id
             try:
@@ -863,6 +905,14 @@ class MainWindow(QMainWindow):
         if self.doc is None:
             return
         has_selection = sel_end > sel_start
+
+        # 如果有選取文字，在選單最上方加入「複製」選項
+        if has_selection:
+            act_copy = QAction("複製選取文字", menu)
+            act_copy.setShortcut("Ctrl+C")  # 提示使用者亦可用快捷鍵
+            act_copy.triggered.connect(self.editor.copy)  # 直接呼叫 QTextEdit 內建的複製功能
+            menu.addAction(act_copy)
+            menu.addSeparator()
 
         # If hovering over an annotation, show its info.
         if ann_id is not None:
@@ -913,9 +963,28 @@ class MainWindow(QMainWindow):
             return
 
         menu = QMenu(self)
+
+        # 直接攔截選單的鍵盤事件，強行捕捉 Ctrl+C
+        def _menu_key_press(event):
+            if event.matches(QKeySequence.Copy):
+                self.editor.copy()
+                menu.close()
+            else:
+                QMenu.keyPressEvent(menu, event)
+        menu.keyPressEvent = _menu_key_press
+
         wa = QWidgetAction(menu)
         wa.setDefaultWidget(self._make_quick_label_widget(menu))
         menu.addAction(wa)
+
+        # 在快速選單中加入複製選項，並攔截 Ctrl+C
+        menu.addSeparator()
+        act_copy = QAction("複製選取文字", menu)
+        act_copy.setShortcut("Ctrl+C")
+        # 複製文字後，順便關閉這個小選單，讓畫面保持乾淨
+        act_copy.triggered.connect(lambda: (self.editor.copy(), menu.close()))
+        menu.addAction(act_copy)
+
         # 避開剛放開滑鼠的位置，往下偏 8px。Qt 會自動處理畫面邊界。
         menu.exec(global_pos + QPoint(0, 8))
 
