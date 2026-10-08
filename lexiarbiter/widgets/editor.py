@@ -130,6 +130,7 @@ class AnnotationEditor(QTextEdit):
         self._context_menu_builder = None
         # 追蹤是不是「正在拖左鍵」；右鍵 / 中鍵 / 鍵盤選取都不應觸發 popup。
         self._left_drag_active: bool = False
+        self._expl_highlight: Optional[tuple[int, int, str]] = None
 
         # 系統深 / 淺色主題切換時自動重繪。Qt 6.5+ 才有此 signal，
         # 舊版直接 fallback 到「重啟程式才生效」。
@@ -205,14 +206,48 @@ class AnnotationEditor(QTextEdit):
             self._left_drag_active = False
             if self.has_selection():
                 self.selection_finished.emit(ev.globalPosition().toPoint())
+            else:
+                cursor = self.cursorForPosition(ev.position().toPoint())
+                d_pos = cursor.position()
+                if self._omap and self._doc:
+                    storage_pos = self._omap.to_storage(d_pos)
+                    anns = self._doc.annotations_at(storage_pos)
+                    if anns:
+                        self.annotation_clicked.emit(anns[-1].id)
 
     # ------------------------------------------------------ highlight render
+
+    def highlight_explanation(self, start: int, end: int, color: str):
+        self._expl_highlight = (start, end, color)
+        self.refresh_highlights()
+
+    def clear_explanation_highlight(self):
+        self._expl_highlight = None
+        self.refresh_highlights()
 
     def refresh_highlights(self):
         if self._doc is None or self._mode is None or self._omap is None:
             return
         try:
             selections = []
+            
+            # 優先繪製解釋段落高亮 (放底層)
+            if self._expl_highlight:
+                start, end, color = self._expl_highlight
+                sel = QTextEdit.ExtraSelection()
+                cursor = self.textCursor()
+                d_start = self._omap.to_display(start)
+                d_end = self._omap.to_display(end)
+                cursor.setPosition(d_start)
+                cursor.setPosition(d_end, QTextCursor.KeepAnchor)
+                sel.cursor = cursor
+                fmt = QTextCharFormat()
+                bg_color = _hex_to_qcolor(color, alpha=150)
+                if bg_color:
+                    fmt.setBackground(bg_color)
+                sel.format = fmt
+                selections.append(sel)
+                
             for ann in self._doc.annotations:
                 sel = QTextEdit.ExtraSelection()
                 cursor = self.textCursor()
