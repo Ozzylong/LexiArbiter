@@ -131,6 +131,7 @@ class AnnotationEditor(QTextEdit):
         # 追蹤是不是「正在拖左鍵」；右鍵 / 中鍵 / 鍵盤選取都不應觸發 popup。
         self._left_drag_active: bool = False
         self._expl_highlight: Optional[tuple[int, int, str]] = None
+        self._pending_term_highlight: Optional[tuple[int, int, str]] = None
 
         # 系統深 / 淺色主題切換時自動重繪。Qt 6.5+ 才有此 signal，
         # 舊版直接 fallback 到「重啟程式才生效」。
@@ -225,6 +226,14 @@ class AnnotationEditor(QTextEdit):
         self._expl_highlight = None
         self.refresh_highlights()
 
+    def highlight_pending_term(self, start: int, end: int, color: str):
+        self._pending_term_highlight = (start, end, color)
+        self.refresh_highlights()
+
+    def clear_pending_term_highlight(self):
+        self._pending_term_highlight = None
+        self.refresh_highlights()
+
     def refresh_highlights(self):
         if self._doc is None or self._mode is None or self._omap is None:
             return
@@ -243,6 +252,23 @@ class AnnotationEditor(QTextEdit):
                 sel.cursor = cursor
                 fmt = QTextCharFormat()
                 bg_color = _hex_to_qcolor(color, alpha=150)
+                if bg_color:
+                    fmt.setBackground(bg_color)
+                sel.format = fmt
+                selections.append(sel)
+                
+            # 繪製暫時的待確認術語高亮
+            if getattr(self, "_pending_term_highlight", None):
+                start, end, color = self._pending_term_highlight
+                sel = QTextEdit.ExtraSelection()
+                cursor = self.textCursor()
+                d_start = self._omap.to_display(start)
+                d_end = self._omap.to_display(end)
+                cursor.setPosition(d_start)
+                cursor.setPosition(d_end, QTextCursor.KeepAnchor)
+                sel.cursor = cursor
+                fmt = QTextCharFormat()
+                bg_color = _hex_to_qcolor(color, alpha=100)
                 if bg_color:
                     fmt.setBackground(bg_color)
                 sel.format = fmt

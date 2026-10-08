@@ -380,6 +380,7 @@ class MainWindow(QMainWindow):
     def _handle_escape(self):
         if getattr(self, "_pending_term_info", None):
             self._hide_hud()
+            self.editor.clear_pending_term_highlight()
             self.status.showMessage("已取消術語標註。", 3000)
             cursor = self.editor.textCursor()
             cursor.clearSelection()
@@ -471,6 +472,9 @@ class MainWindow(QMainWindow):
                 return
                 
             self._pending_term_info = (s, e, group_id, label_id)
+            
+            # 暫時高亮術語
+            self.editor.highlight_pending_term(s, e, "#90A4AE")
             
             # Step 2: Show HUD, change cursor, wait for explanation selection
             self._show_hud()
@@ -1065,9 +1069,11 @@ class MainWindow(QMainWindow):
             
             s_term, e_term, group_id, label_id = self._pending_term_info
             
-            # Show Dialog
             term_text = self.doc.text[s_term:e_term]
             exp_text = self.doc.text[s_exp:e_exp]
+            
+            # Hide HUD before showing blocking dialog
+            self._hide_hud()
             
             dlg = TermConceptDialog(self.doc.concepts, term_text, exp_text, parent=self)
             
@@ -1075,7 +1081,11 @@ class MainWindow(QMainWindow):
                 if dlg.exec():
                     b_id, b_name, br_id, br_name, wants_back = dlg.get_results()
                     if wants_back:
-                        continue
+                        self._show_hud()
+                        cursor = self.editor.textCursor()
+                        cursor.clearSelection()
+                        self.editor.setTextCursor(cursor)
+                        break
                     
                     concept_id = None
                     if b_name:
@@ -1103,11 +1113,10 @@ class MainWindow(QMainWindow):
                     )
                     self.doc.add_annotation(ann)
                     self.doc.dirty = True
+                    self.editor.clear_pending_term_highlight()
                     self.editor.refresh_highlights()
                     self._refresh_status()
                     self._update_window_title()
-                    
-                    self._hide_hud()
                     
                     cursor = self.editor.textCursor()
                     cursor.clearSelection()
@@ -1117,13 +1126,14 @@ class MainWindow(QMainWindow):
                     b_id, b_name, br_id, br_name, wants_back = dlg.get_results()
                     if wants_back:
                         # 重選解釋
+                        self._show_hud()
                         cursor = self.editor.textCursor()
                         cursor.clearSelection()
                         self.editor.setTextCursor(cursor)
                         break
                     else:
                         # 放棄標註
-                        self._hide_hud()
+                        self.editor.clear_pending_term_highlight()
                         cursor = self.editor.textCursor()
                         cursor.clearSelection()
                         self.editor.setTextCursor(cursor)

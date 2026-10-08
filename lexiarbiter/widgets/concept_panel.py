@@ -12,27 +12,32 @@ class TermConceptDialog(QDialog):
     def __init__(self, concepts: dict[str, str], term_text: str, explanation_text: str, parent=None):
         super().__init__(parent)
         self.setWindowTitle("設定概念與標註確認")
-        self.resize(500, 350)
+        self.resize(600, 420)
+        
+        # 放大預設字體
+        font = self.font()
+        font.setPointSize(font.pointSize() + 1)
+        self.setFont(font)
         
         # 追蹤是否要「回上一步」
         self.wants_back = False
         
         layout = QVBoxLayout(self)
         
+        from PySide6.QtWidgets import QPlainTextEdit
+        
         # [唯讀資訊區]
         layout.addWidget(QLabel("<b>📌 您選取的術語：</b>"))
-        lbl_term = QLabel(term_text)
-        lbl_term.setWordWrap(True)
-        lbl_term.setStyleSheet("background-color: #f0f0f0; padding: 4px; border-radius: 4px;")
-        layout.addWidget(lbl_term)
+        txt_term = QPlainTextEdit(term_text)
+        txt_term.setReadOnly(True)
+        txt_term.setMaximumHeight(60)
+        layout.addWidget(txt_term)
         
         layout.addWidget(QLabel("<b>📖 您選取的解釋：</b>"))
-        # 如果解釋太長，截斷顯示
-        display_exp = explanation_text if len(explanation_text) < 150 else explanation_text[:147] + "..."
-        lbl_exp = QLabel(display_exp)
-        lbl_exp.setWordWrap(True)
-        lbl_exp.setStyleSheet("background-color: #f0f0f0; padding: 4px; border-radius: 4px;")
-        layout.addWidget(lbl_exp)
+        txt_exp = QPlainTextEdit(explanation_text)
+        txt_exp.setReadOnly(True)
+        txt_exp.setMaximumHeight(100)
+        layout.addWidget(txt_exp)
         
         layout.addSpacing(10)
         
