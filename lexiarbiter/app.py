@@ -173,7 +173,6 @@ class MainWindow(QMainWindow):
     def _hide_hud(self):
         self.hud_label.hide()
         self.editor.viewport().setCursor(Qt.IBeamCursor)
-        self._pending_term_info = None
 
     # ---------------------------------------------------- mode resolution
 
@@ -381,6 +380,7 @@ class MainWindow(QMainWindow):
         if getattr(self, "_pending_term_info", None):
             self._hide_hud()
             self.editor.clear_pending_term_highlight()
+            self._pending_term_info = None
             self.status.showMessage("已取消術語標註。", 3000)
             cursor = self.editor.textCursor()
             cursor.clearSelection()
@@ -1028,10 +1028,8 @@ class MainWindow(QMainWindow):
         
         popup.setStyleSheet("""
             QWidget {
-                background-color: #fffde7; 
-                border: 1px solid #cfd8dc; 
+                border: 1px solid #78909C; 
                 border-radius: 4px;
-                color: #263238;
             }
         """)
         
@@ -1114,6 +1112,7 @@ class MainWindow(QMainWindow):
                     self.doc.add_annotation(ann)
                     self.doc.dirty = True
                     self.editor.clear_pending_term_highlight()
+                    self._pending_term_info = None
                     self.editor.refresh_highlights()
                     self._refresh_status()
                     self._update_window_title()
@@ -1134,6 +1133,7 @@ class MainWindow(QMainWindow):
                     else:
                         # 放棄標註
                         self.editor.clear_pending_term_highlight()
+                        self._pending_term_info = None
                         cursor = self.editor.textCursor()
                         cursor.clearSelection()
                         self.editor.setTextCursor(cursor)
