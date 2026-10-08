@@ -24,16 +24,17 @@ class TermConceptDialog(QDialog):
         
         layout = QVBoxLayout(self)
         
-        from PySide6.QtWidgets import QPlainTextEdit
+        from PySide6.QtWidgets import QPlainTextEdit, QLineEdit, QCompleter
         
         # [唯讀資訊區]
-        layout.addWidget(QLabel("<b>📌 您選取的術語：</b>"))
-        txt_term = QPlainTextEdit(term_text)
+        term_layout = QHBoxLayout()
+        term_layout.addWidget(QLabel("<b>術語：</b>"))
+        txt_term = QLineEdit(term_text)
         txt_term.setReadOnly(True)
-        txt_term.setMaximumHeight(60)
-        layout.addWidget(txt_term)
+        term_layout.addWidget(txt_term)
+        layout.addLayout(term_layout)
         
-        layout.addWidget(QLabel("<b>📖 您選取的解釋：</b>"))
+        layout.addWidget(QLabel("<b>對應解釋：</b>"))
         txt_exp = QPlainTextEdit(explanation_text)
         txt_exp.setReadOnly(True)
         txt_exp.setMaximumHeight(100)
@@ -45,24 +46,39 @@ class TermConceptDialog(QDialog):
         from PySide6.QtWidgets import QComboBox
         # 為了排序建立 list
         sorted_concepts = sorted(concepts.items(), key=lambda x: x[1])
+        concept_names = [name for cid, name in sorted_concepts]
         
-        layout.addWidget(QLabel("<b>1. 綁定概念 (Bound Concept)：</b>"))
+        layout.addWidget(QLabel("<b>1. 術語對應概念：</b>"))
         self.bound_combo = QComboBox()
         self.bound_combo.setEditable(True)
-        self.bound_combo.addItem(" (無) ", None)
+        self.bound_combo.setMaxVisibleItems(10)
         for cid, name in sorted_concepts:
             self.bound_combo.addItem(name, cid)
         self.bound_combo.setCurrentText(term_text) # 預設帶入術語文字
+        
+        comp_bound = QCompleter(concept_names, self)
+        comp_bound.setCaseSensitivity(Qt.CaseInsensitive)
+        comp_bound.setFilterMode(Qt.MatchContains)
+        self.bound_combo.setCompleter(comp_bound)
+        
         layout.addWidget(self.bound_combo)
         
         layout.addSpacing(10)
         
-        layout.addWidget(QLabel("<b>2. 上位概念 (Broader Concept)：</b>"))
+        layout.addWidget(QLabel("<b>2. 術語的上層概念：</b>"))
         self.broader_combo = QComboBox()
         self.broader_combo.setEditable(True)
+        self.broader_combo.setMaxVisibleItems(10)
         self.broader_combo.addItem(" (無) ", None)
         for cid, name in sorted_concepts:
             self.broader_combo.addItem(name, cid)
+        self.broader_combo.setCurrentText(term_text)
+        
+        comp_broader = QCompleter([" (無) "] + concept_names, self)
+        comp_broader.setCaseSensitivity(Qt.CaseInsensitive)
+        comp_broader.setFilterMode(Qt.MatchContains)
+        self.broader_combo.setCompleter(comp_broader)
+        
         layout.addWidget(self.broader_combo)
         
         layout.addStretch()
@@ -85,6 +101,15 @@ class TermConceptDialog(QDialog):
         btn_layout.addWidget(self.btn_back)
         btn_layout.addWidget(self.btn_cancel)
         layout.addLayout(btn_layout)
+
+    def accept(self):
+        if not self.bound_combo.currentText().strip():
+            QMessageBox.warning(self, "錯誤", "綁定概念不能留空！\n若無現有概念，請直接輸入術語本身作為新概念。")
+            return
+        if not self.broader_combo.currentText().strip():
+            QMessageBox.warning(self, "錯誤", "上位概念不能留空！\n若無上位概念，請選擇「 (無) 」或輸入術語本身。")
+            return
+        super().accept()
 
     def _on_back_clicked(self):
         self.wants_back = True
