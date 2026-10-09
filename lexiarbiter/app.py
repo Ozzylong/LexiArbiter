@@ -1024,6 +1024,18 @@ class MainWindow(QMainWindow):
         c_bound = self.doc.concepts.get(ann.concept_id, "(無)") if getattr(ann, "concept_id", None) else "(無)"
         c_broader = self.doc.concepts.get(ann.broader_concept_id, "(無)") if getattr(ann, "broader_concept_id", None) else "(無)"
         
+        # 3. 在狀態列顯示截斷後的解釋
+        exp_text = "(無)"
+        if getattr(ann, "explanation_start", None) is not None and getattr(ann, "explanation_end", None) is not None:
+            raw_text = self.doc.text[ann.explanation_start:ann.explanation_end].replace("\r", " ").replace("\n", " ")
+            if len(raw_text) > 50:
+                exp_text = raw_text[:47] + "..."
+            else:
+                exp_text = raw_text
+                
+        status_msg = f"概念: {c_bound}  |  上位: {c_broader}  |  解釋: {exp_text}"
+        self.status.showMessage(status_msg, 0)
+        
         layout.addWidget(QLabel(f"<b>綁定概念：</b> {c_bound}"))
         layout.addWidget(QLabel(f"<b>上位概念：</b> {c_broader}"))
         
@@ -1045,10 +1057,11 @@ class MainWindow(QMainWindow):
         pos.setY(pos.y() - popup.height() - 5)
         popup.move(pos)
         
-        # 當彈窗關閉時清除高亮
+        # 當彈窗關閉時清除高亮與恢復狀態列
         original_hide = popup.hideEvent
         def on_hide(e):
             self.editor.clear_explanation_highlight()
+            self._refresh_status()
             if original_hide:
                 original_hide(e)
         popup.hideEvent = on_hide
