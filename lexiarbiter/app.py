@@ -31,6 +31,7 @@ from .core.config import (
 )
 from .core.logger import current_log_dir
 from .core.models import Annotation, Document, detect_same_group_conflicts
+from .mode_handlers import get_handler
 from .widgets.editor import AnnotationEditor
 from .widgets.file_panel import FilePanel
 from .widgets.concept_panel import TermConceptDialog, ConceptSidebar
@@ -96,6 +97,7 @@ class MainWindow(QMainWindow):
         self.prefs: UserPreferences = UserPreferences.load()
         self.modes: list[AnnotationMode] = list_annotation_modes()
         self.mode: AnnotationMode = self._select_initial_mode()
+        self.mode_handler = get_handler(self.mode.id, self)
 
         self.doc: Optional[Document] = None
 
@@ -461,30 +463,8 @@ class MainWindow(QMainWindow):
             self.status.showMessage("請先開啟一個檔案再進行標註。", 4000)
             return
 
-        # ================= NEW TERM DEFINITION WORKFLOW (Step 1 -> 2) =================
-        if self.mode.id == "term_definition":
-            if not self.editor.has_selection():
-                self.status.showMessage("請先選取一段文字作為術語。", 4000)
-                return
-            s, e = self.editor.storage_selection()
-            # 檢查 term 範圍是否有重疊
-            if not self._resolve_same_group_overlap(s, e, group_id):
-                return
-                
-            self._pending_term_info = (s, e, group_id, label_id)
-            
-            # 暫時高亮術語
-            self.editor.highlight_pending_term(s, e, "#90A4AE")
-            
-            # Step 2: Show HUD, change cursor, wait for explanation selection
-            self._show_hud()
-            self.status.showMessage("步驟 2/3：請在文章中反白選取該術語的『解釋段落』 (按 Esc 取消)", 0)
-            
-            cursor = self.editor.textCursor()
-            cursor.clearSelection()
-            self.editor.setTextCursor(cursor)
+        if self.mode_handler.handle_apply_label(group_id, label_id):
             return
-        # ==============================================================================
         
         concept_id = None
        
@@ -922,6 +902,7 @@ class MainWindow(QMainWindow):
                     a.setChecked(a.data() == self.mode.id)
                 return
         self.mode = target
+        self.mode_handler = get_handler(self.mode.id, self)
         self.concept_panel.setVisible(self.mode.id == "term_definition")
         if persist:
             self.prefs.active_mode_id = target.id
@@ -992,6 +973,9 @@ class MainWindow(QMainWindow):
             act_clear.triggered.connect(self._make_clear_group_handler(g.id))
             sub.addAction(act_clear)
 
+        ann = self.doc.find_annotation(ann_id) if ann_id else None
+        self.mode_handler.add_context_menu_actions(menu, ann, sel_start, sel_end)
+
         menu.addSeparator()
         act_remove = QAction("刪除此處標註", menu)
         act_remove.triggered.connect(self.action_remove_annotation_at_cursor)
@@ -1002,166 +986,16 @@ class MainWindow(QMainWindow):
     # ----------------------------------------------- 反白後自動跳出快速選單
 
     def _on_annotation_clicked(self, ann_id: str):
-        if self.mode.id != "term_definition" or getattr(self, "_pending_term_info", None):
+        if self.mode_handler.on_annotation_clicked(ann_id):
             return
-        if not self.doc:
-            return
-        ann = self.doc.find_annotation(ann_id)
-        if not ann:
-            return
-            
-        # 1. 暫時高亮解釋段落
-        if getattr(ann, "explanation_start", None) is not None and getattr(ann, "explanation_end", None) is not None:
-            color = self.prefs.ui.get("explanation_highlight_color", "#90CAF9")
-            self.editor.highlight_explanation(ann.explanation_start, ann.explanation_end, color)
-            
-        # 2. 在術語上方顯示資訊卡
-        popup = QWidget(self, Qt.Popup)
-        popup.setObjectName("TermPopup")
-        layout = QVBoxLayout(popup)
-        layout.setContentsMargins(8, 8, 8, 8)
-        
-        c_bound = self.doc.concepts.get(ann.concept_id, "(無)") if getattr(ann, "concept_id", None) else "(無)"
-        c_broader = self.doc.concepts.get(ann.broader_concept_id, "(無)") if getattr(ann, "broader_concept_id", None) else "(無)"
-        
-        # 3. 在狀態列顯示截斷後的解釋
-        exp_text = "(無)"
-        if getattr(ann, "explanation_start", None) is not None and getattr(ann, "explanation_end", None) is not None:
-            raw_text = self.doc.text[ann.explanation_start:ann.explanation_end].replace("\r", " ").replace("\n", " ")
-            if len(raw_text) > 50:
-                exp_text = raw_text[:47] + "..."
-            else:
-                exp_text = raw_text
-                
-        status_msg = f"概念: {c_bound}  |  上位: {c_broader}  |  解釋: {exp_text}"
-        self.status.showMessage(status_msg, 0)
-        
-        layout.addWidget(QLabel(f"<b>綁定概念：</b> {c_bound}"))
-        layout.addWidget(QLabel(f"<b>上位概念：</b> {c_broader}"))
-        
-        popup.setStyleSheet("""
-            QWidget#TermPopup {
-                border: 1px solid #78909C; 
-                border-radius: 4px;
-            }
-        """)
-        
-        # 取得術語在畫面上的位置 (取 start 的位置)
-        cursor = self.editor.textCursor()
-        if self.editor._omap:
-            cursor.setPosition(self.editor._omap.to_display(ann.start))
-        rect = self.editor.cursorRect(cursor)
-        pos = self.editor.viewport().mapToGlobal(rect.topLeft())
-        
-        popup.adjustSize()
-        pos.setY(pos.y() - popup.height() - 5)
-        popup.move(pos)
-        
-        # 當彈窗關閉時清除高亮與恢復狀態列
-        original_hide = popup.hideEvent
-        def on_hide(e):
-            self.editor.clear_explanation_highlight()
-            self._refresh_status()
-            if original_hide:
-                original_hide(e)
-        popup.hideEvent = on_hide
-        
-        popup.show()
 
     def _show_quick_label_popup(self, global_pos: QPoint):
         """滑鼠拖選結束時呼叫；在選取附近彈出緊湊水平的標籤選單。
 
         以 prefs 開關控制；沒開檔案時不跳。
         """
-        # ================= NEW TERM DEFINITION WORKFLOW (Step 2 -> 3) =================
-        if getattr(self, "_pending_term_info", None):
-            s_exp, e_exp = self.editor.storage_selection()
-            if not (e_exp > s_exp):
-                return
-            
-            s_term, e_term, group_id, label_id = self._pending_term_info
-            
-            term_text = self.doc.text[s_term:e_term]
-            exp_text = self.doc.text[s_exp:e_exp]
-            
-            # Hide HUD before showing blocking dialog
-            self._hide_hud()
-            
-            dlg = TermConceptDialog(self.doc.concepts, term_text, exp_text, parent=self)
-            
-            while True:
-                if dlg.exec():
-                    b_id, b_name, br_id, br_name, wants_back = dlg.get_results()
-                    if wants_back:
-                        self._show_hud()
-                        cursor = self.editor.textCursor()
-                        cursor.clearSelection()
-                        self.editor.setTextCursor(cursor)
-                        break
-                    
-                    concept_id = None
-                    if b_name:
-                        existing_id = next((cid for cid, name in self.doc.concepts.items() if name == b_name), None)
-                        if existing_id:
-                            concept_id = existing_id
-                        else:
-                            concept_id = "C_" + uuid.uuid4().hex[:8]
-                            self.doc.concepts[concept_id] = b_name
-                    elif b_id:
-                        concept_id = b_id
-                        
-                    broader_id = None
-                    if br_name:
-                        existing_id = next((cid for cid, name in self.doc.concepts.items() if name == br_name), None)
-                        if existing_id:
-                            broader_id = existing_id
-                        else:
-                            broader_id = "C_" + uuid.uuid4().hex[:8]
-                            self.doc.concepts[broader_id] = br_name
-                    elif br_id:
-                        broader_id = br_id
-                        
-                    self.concept_panel.refresh(self.doc)
-                    
-                    ann = Annotation(
-                        start=s_term, end=e_term, 
-                        labels={group_id: label_id}, 
-                        concept_id=concept_id,
-                        explanation_start=s_exp,
-                        explanation_end=e_exp,
-                        broader_concept_id=broader_id
-                    )
-                    self.doc.add_annotation(ann)
-                    self.doc.dirty = True
-                    self.editor.clear_pending_term_highlight()
-                    self._pending_term_info = None
-                    self.editor.refresh_highlights()
-                    self._refresh_status()
-                    self._update_window_title()
-                    
-                    cursor = self.editor.textCursor()
-                    cursor.clearSelection()
-                    self.editor.setTextCursor(cursor)
-                    break
-                else:
-                    b_id, b_name, br_id, br_name, wants_back = dlg.get_results()
-                    if wants_back:
-                        # 重選解釋
-                        self._show_hud()
-                        cursor = self.editor.textCursor()
-                        cursor.clearSelection()
-                        self.editor.setTextCursor(cursor)
-                        break
-                    else:
-                        # 放棄標註
-                        self.editor.clear_pending_term_highlight()
-                        self._pending_term_info = None
-                        cursor = self.editor.textCursor()
-                        cursor.clearSelection()
-                        self.editor.setTextCursor(cursor)
-                        break
+        if self.mode_handler.handle_selection_finished(global_pos):
             return
-        # ==============================================================================
 
         if not self.prefs.behavior.get("auto_popup_on_selection", True):
             return
