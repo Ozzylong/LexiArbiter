@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (
 class TermConceptDialog(QDialog):
     """彈出視窗：設定術語的綁定概念與上位概念，並做最終確認。"""
     
-    def __init__(self, concepts: dict[str, str], term_text: str, explanation_text: str, default_bound_id: str | None = None, default_broader_id: str | None = None, parent=None):
+    def __init__(self, concepts: dict[str, str], term_text: str, explanation_text: str, default_bound_id: str | None = None, default_broader_id: str | None = None, parent=None, is_edit_mode: bool = False):
         super().__init__(parent)
         self.setWindowTitle("設定概念與標註確認")
         self.resize(600, 420)
@@ -97,6 +97,8 @@ class TermConceptDialog(QDialog):
         self.btn_ok.clicked.connect(self.accept)
         
         self.btn_back = QPushButton("回上一步 (重選解釋)")
+        if is_edit_mode:
+            self.btn_back.hide()
         self.btn_back.setStyleSheet("background-color: #FF9800; color: white; padding: 6px; border-radius: 4px;")
         self.btn_back.clicked.connect(self._on_back_clicked)
         
