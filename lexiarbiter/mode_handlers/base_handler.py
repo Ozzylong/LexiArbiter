@@ -40,3 +40,6 @@ class BaseModeHandler:
         """
         return False
 
+
+    def suppress_default_context_menu(self, ann) -> bool:
+        return False

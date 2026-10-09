@@ -944,9 +944,10 @@ class MainWindow(QMainWindow):
             menu.addAction(act_copy)
             menu.addSeparator()
 
-        # If hovering over an annotation, show its info.
-        if ann_id is not None:
-            ann = self.doc.find_annotation(ann_id)
+        ann = self.doc.find_annotation(ann_id) if ann_id else None
+
+        if not self.mode_handler.suppress_default_context_menu(ann):
+            # If hovering over an annotation, show its info.
             if ann is not None:
                 lbl_lines = []
                 for g in self.mode.groups:
@@ -960,20 +961,18 @@ class MainWindow(QMainWindow):
                 menu.addAction(head)
                 menu.addSeparator()
 
-        for g in self.mode.groups:
-            sub = menu.addMenu(g.name)
-            for lb in g.labels:
-                shortcut = self.prefs.label_shortcut(g.id, lb.id, lb.shortcut)
-                text = lb.name + (f"\t{shortcut}" if shortcut else "")
-                act = QAction(_swatch_icon(lb.color), text, sub)
-                act.triggered.connect(self._make_label_handler(g.id, lb.id))
-                sub.addAction(act)
-            sub.addSeparator()
-            act_clear = QAction(f"清除「{g.name}」", sub)
-            act_clear.triggered.connect(self._make_clear_group_handler(g.id))
-            sub.addAction(act_clear)
-
-        ann = self.doc.find_annotation(ann_id) if ann_id else None
+            for g in self.mode.groups:
+                sub = menu.addMenu(g.name)
+                for lb in g.labels:
+                    shortcut = self.prefs.label_shortcut(g.id, lb.id, lb.shortcut)
+                    text = lb.name + (f"\t{shortcut}" if shortcut else "")
+                    act = QAction(_swatch_icon(lb.color), text, sub)
+                    act.triggered.connect(self._make_label_handler(g.id, lb.id))
+                    sub.addAction(act)
+                sub.addSeparator()
+                act_clear = QAction(f"清除「{g.name}」", sub)
+                act_clear.triggered.connect(self._make_clear_group_handler(g.id))
+                sub.addAction(act_clear)
         self.mode_handler.add_context_menu_actions(menu, ann, sel_start, sel_end)
 
         menu.addSeparator()
