@@ -32,108 +32,132 @@ class TermDefinitionHandler(BaseModeHandler):
         return True
 
     def handle_selection_finished(self, global_pos: QPoint) -> bool:
+        s_exp, e_exp = self.app.editor.storage_selection()
+        
+        # Bug 4 Fix: If selection exactly matches an annotation, show info card instead of quick menu
+        if e_exp > s_exp and not getattr(self.app, "_pending_term_info", None):
+            exact_matches = [a for a in self.app.doc.annotations if a.start == s_exp and a.end == e_exp]
+            if exact_matches:
+                self.on_annotation_clicked(exact_matches[-1].id)
+                self.app.editor.clearSelection()
+                return True
+
         if not getattr(self.app, "_pending_term_info", None):
             return False
 
-        s_exp, e_exp = self.app.editor.storage_selection()
         if not (e_exp > s_exp):
             return True # Still handled, just ignored
             
         pending = self.app._pending_term_info
         
         # New selection workflow (length = 4)
-        if len(pending) == 4:
+        if len(pending) == 4 and pending[0] != "reselect":
             s_term, e_term, group_id, label_id = pending
-            existing_b_id = None
-            existing_br_id = None
-        # Edit selection workflow (length = 6)
-        elif len(pending) == 6:
-            s_term, e_term, group_id, label_id, existing_b_id, existing_br_id = pending
-        else:
-            return True
-
-        term_text = self.app.doc.text[s_term:e_term]
-        exp_text = self.app.doc.text[s_exp:e_exp]
-        
-        # Hide HUD before showing blocking dialog
-        self.app._hide_hud()
-        
-        dlg = TermConceptDialog(self.app.doc.concepts, term_text, exp_text, 
-                                default_bound_id=existing_b_id, 
-                                default_broader_id=existing_br_id, 
-                                parent=self.app)
-        
-        while True:
-            if dlg.exec():
-                b_id, b_name, br_id, br_name, wants_back = dlg.get_results()
-                if wants_back:
-                    self.app._show_hud()
-                    cursor = self.app.editor.textCursor()
-                    cursor.clearSelection()
-                    self.app.editor.setTextCursor(cursor)
-                    break
-                
-                concept_id = None
-                if b_name:
-                    existing_id = next((cid for cid, name in self.app.doc.concepts.items() if name == b_name), None)
-                    if existing_id:
-                        concept_id = existing_id
-                    else:
-                        concept_id = "C_" + uuid.uuid4().hex[:8]
-                        self.app.doc.concepts[concept_id] = b_name
-                elif b_id:
-                    concept_id = b_id
+            
+            term_text = self.app.doc.text[s_term:e_term]
+            exp_text = self.app.doc.text[s_exp:e_exp]
+            
+            self.app._hide_hud()
+            
+            dlg = TermConceptDialog(self.app.doc.concepts, term_text, exp_text, parent=self.app, is_edit_mode=True)
+            
+            while True:
+                if dlg.exec():
+                    b_id, b_name, br_id, br_name, wants_back = dlg.get_results()
+                    if wants_back:
+                        self.app._show_hud()
+                        cursor = self.app.editor.textCursor()
+                        cursor.clearSelection()
+                        self.app.editor.setTextCursor(cursor)
+                        break
                     
-                broader_id = None
-                if br_name:
-                    existing_id = next((cid for cid, name in self.app.doc.concepts.items() if name == br_name), None)
-                    if existing_id:
-                        broader_id = existing_id
-                    else:
-                        broader_id = "C_" + uuid.uuid4().hex[:8]
-                        self.app.doc.concepts[broader_id] = br_name
-                elif br_id:
-                    broader_id = br_id
+                    concept_id = None
+                    if b_name:
+                        existing_id = next((cid for cid, name in self.app.doc.concepts.items() if name == b_name), None)
+                        if existing_id:
+                            concept_id = existing_id
+                        else:
+                            import uuid
+                            concept_id = "C_" + uuid.uuid4().hex[:8]
+                            self.app.doc.concepts[concept_id] = b_name
+                    elif b_id:
+                        concept_id = b_id
+                        
+                    broader_id = None
+                    if br_name:
+                        existing_id = next((cid for cid, name in self.app.doc.concepts.items() if name == br_name), None)
+                        if existing_id:
+                            broader_id = existing_id
+                        else:
+                            import uuid
+                            broader_id = "C_" + uuid.uuid4().hex[:8]
+                            self.app.doc.concepts[broader_id] = br_name
+                    elif br_id:
+                        broader_id = br_id
+                        
+                    self.app.concept_panel.refresh(self.app.doc)
                     
-                self.app.concept_panel.refresh(self.app.doc)
-                
-                ann = Annotation(
-                    start=s_term, end=e_term, 
-                    labels={group_id: label_id}, 
-                    concept_id=concept_id,
-                    explanation_start=s_exp,
-                    explanation_end=e_exp,
-                    broader_concept_id=broader_id
-                )
-                self.app.doc.add_annotation(ann)
-                self.app.doc.dirty = True
-                self.app.editor.clear_pending_term_highlight()
-                self.app.editor.clear_explanation_highlight()
-                self.app._pending_term_info = None
-                self.app.editor.refresh_highlights()
-                self.app._refresh_status()
-                self.app._update_window_title()
-                
-                cursor = self.app.editor.textCursor()
-                cursor.clearSelection()
-                self.app.editor.setTextCursor(cursor)
-                break
-            else:
-                b_id, b_name, br_id, br_name, wants_back = dlg.get_results()
-                if wants_back:
-                    self.app._show_hud()
+                    ann = Annotation(
+                        start=s_term, end=e_term, 
+                        labels={group_id: label_id}, 
+                        concept_id=concept_id,
+                        explanation_start=s_exp,
+                        explanation_end=e_exp,
+                        broader_concept_id=broader_id
+                    )
+                    self.app.doc.add_annotation(ann)
+                    self.app.doc.dirty = True
+                    self.app.editor.clear_pending_term_highlight()
+                    self.app.editor.clear_explanation_highlight()
+                    self.app._pending_term_info = None
+                    self.app.editor.refresh_highlights()
+                    self.app._refresh_status()
+                    self.app._update_window_title()
+                    
                     cursor = self.app.editor.textCursor()
                     cursor.clearSelection()
                     self.app.editor.setTextCursor(cursor)
                     break
                 else:
-                    self.app.editor.clear_pending_term_highlight()
-                    self.app.editor.clear_explanation_highlight()
-                    self.app._pending_term_info = None
-                    cursor = self.app.editor.textCursor()
-                    cursor.clearSelection()
-                    self.app.editor.setTextCursor(cursor)
-                    break
+                    b_id, b_name, br_id, br_name, wants_back = dlg.get_results()
+                    if wants_back:
+                        self.app._show_hud()
+                        cursor = self.app.editor.textCursor()
+                        cursor.clearSelection()
+                        self.app.editor.setTextCursor(cursor)
+                        break
+                    else:
+                        self.app.editor.clear_pending_term_highlight()
+                        self.app.editor.clear_explanation_highlight()
+                        self.app._pending_term_info = None
+                        cursor = self.app.editor.textCursor()
+                        cursor.clearSelection()
+                        self.app.editor.setTextCursor(cursor)
+                        break
+            return True
+            
+        elif len(pending) == 2 and pending[0] == "reselect":
+            # Bug 3 Fix: Auto-save on reselect explanation
+            ann_id = pending[1]
+            ann = self.app.doc.find_annotation(ann_id)
+            if ann:
+                ann.explanation_start = s_exp
+                ann.explanation_end = e_exp
+                self.app.doc.dirty = True
+                
+            self.app._hide_hud()
+            self.app.editor.clear_pending_term_highlight()
+            self.app.editor.clear_explanation_highlight()
+            self.app._pending_term_info = None
+            self.app.editor.refresh_highlights()
+            
+            cursor = self.app.editor.textCursor()
+            cursor.clearSelection()
+            self.app.editor.setTextCursor(cursor)
+            
+            self.app.status.showMessage("已更新解釋段落。", 3000)
+            return True
+            
         return True
 
     def on_annotation_clicked(self, ann_id: str) -> bool:
@@ -220,7 +244,7 @@ class TermDefinitionHandler(BaseModeHandler):
         dlg = TermConceptDialog(self.app.doc.concepts, term_text, exp_text, 
                                 default_bound_id=getattr(ann, "concept_id", None), 
                                 default_broader_id=getattr(ann, "broader_concept_id", None), 
-                                parent=self.app)
+                                parent=self.app, is_edit_mode=True)
                                 
         if dlg.exec():
             b_id, b_name, br_id, br_name, wants_back = dlg.get_results()
@@ -258,20 +282,15 @@ class TermDefinitionHandler(BaseModeHandler):
             self.app._refresh_status()
 
     def _reselect_explanation(self, ann: Annotation):
-        s_term = ann.start
-        e_term = ann.end
-        
-        group_id = list(ann.labels.keys())[0] if ann.labels else None
-        label_id = ann.labels[group_id] if group_id else None
-        
-        c_id = getattr(ann, "concept_id", None)
-        br_id = getattr(ann, "broader_concept_id", None)
-        
         old_s_exp = getattr(ann, "explanation_start", None)
         old_e_exp = getattr(ann, "explanation_end", None)
         
-        # Determine colors for highlight
+        # Enter pending state with just the annotation ID
+        self.app._pending_term_info = ("reselect", ann.id)
+        
         term_color = QColor("#FFF59D")
+        group_id = list(ann.labels.keys())[0] if ann.labels else None
+        label_id = ann.labels[group_id] if group_id else None
         if group_id and label_id:
             g = self.app.mode.group(group_id)
             if g:
@@ -280,14 +299,8 @@ class TermDefinitionHandler(BaseModeHandler):
                     c = QColor(l.color)
                     c.setAlpha(120)
                     term_color = c
-        
-        # Remove the annotation
-        self.app.doc.remove_annotation(ann.id)
-        
-        # Enter pending state (tuple of 6 elements for edit mode)
-        self.app._pending_term_info = (s_term, e_term, group_id, label_id, c_id, br_id)
-        
-        self.app.editor.highlight_pending_term(s_term, e_term, term_color)
+                    
+        self.app.editor.highlight_pending_term(ann.start, ann.end, term_color)
         
         if old_s_exp is not None and old_e_exp is not None:
             base_exp_c_str = self.app.prefs.ui.get("explanation_highlight_color", "#90CAF9")
@@ -298,3 +311,7 @@ class TermDefinitionHandler(BaseModeHandler):
         self.app._show_hud()
         self.app.status.showMessage("重新選取解釋段落 (按 Esc 取消)", 0)
         self.app.editor.refresh_highlights()
+
+
+    def suppress_default_context_menu(self, ann) -> bool:
+        return ann is not None
