@@ -1017,6 +1017,7 @@ class MainWindow(QMainWindow):
             
         # 2. 在術語上方顯示資訊卡
         popup = QWidget(self, Qt.Popup)
+        popup.setObjectName("TermPopup")
         layout = QVBoxLayout(popup)
         layout.setContentsMargins(8, 8, 8, 8)
         
@@ -1027,7 +1028,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(QLabel(f"<b>上位概念：</b> {c_broader}"))
         
         popup.setStyleSheet("""
-            QWidget {
+            QWidget#TermPopup {
                 border: 1px solid #78909C; 
                 border-radius: 4px;
             }
