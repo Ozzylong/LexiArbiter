@@ -96,6 +96,12 @@ def _is_dark_palette(widget) -> bool:
     return widget.palette().color(QPalette.Base).lightness() < 128
 
 
+def _text_color_for_bg(bg_color: QColor) -> QColor:
+    """根據背景顏色的明度回傳高對比的文字顏色（深色或淺色）。"""
+    luminance = (0.299 * bg_color.red() + 0.587 * bg_color.green() + 0.114 * bg_color.blue()) / 255.0
+    return QColor("#1B1B1B") if luminance > 0.5 else QColor("#FAFAFA")
+
+
 class AnnotationEditor(QTextEdit):
     """Read-only-ish text view that renders annotations as background highlights.
 
@@ -251,9 +257,10 @@ class AnnotationEditor(QTextEdit):
                 cursor.setPosition(d_end, QTextCursor.KeepAnchor)
                 sel.cursor = cursor
                 fmt = QTextCharFormat()
-                bg_color = _hex_to_qcolor(color, alpha=150)
+                bg_color = _hex_to_qcolor(color, alpha=255)
                 if bg_color:
                     fmt.setBackground(bg_color)
+                    fmt.setForeground(_text_color_for_bg(bg_color))
                 sel.format = fmt
                 selections.append(sel)
                 
@@ -268,9 +275,10 @@ class AnnotationEditor(QTextEdit):
                 cursor.setPosition(d_end, QTextCursor.KeepAnchor)
                 sel.cursor = cursor
                 fmt = QTextCharFormat()
-                bg_color = _hex_to_qcolor(color, alpha=100)
+                bg_color = _hex_to_qcolor(color, alpha=255)
                 if bg_color:
                     fmt.setBackground(bg_color)
+                    fmt.setForeground(_text_color_for_bg(bg_color))
                 sel.format = fmt
                 selections.append(sel)
                 
@@ -297,14 +305,14 @@ class AnnotationEditor(QTextEdit):
         """First group with a non-null color drives the background.
         Other group labels are reflected via underline style.
 
-        渲染參數依當下 palette（深 / 淺）自動切換：深色模式提高背景 alpha 並
-        強制反白標註內文字色，底線色則固定取近黑或近白以保證對比。
+        渲染參數：文字高亮維持 100% 不透明 (Alpha=255) 以對齊按鈕色彩，
+        並根據背景明亮度自動切換深色或淺色文字，確保對比度。
         """
         if self._mode is None:
             return
         dark = _is_dark_palette(self)
-        bg_alpha = 180 if dark else 130
-        fallback_alpha = 90 if dark else 50
+        bg_alpha = 255
+        fallback_alpha = 255
         # 底線色一律取與編輯器背景對比最強的近黑 / 近白，不再從主背景色 darker/lighter 派生
         underline_default = QColor("#ECEFF1") if dark else QColor("#1B1B1B")
 
@@ -338,13 +346,13 @@ class AnnotationEditor(QTextEdit):
                 underline_color = underline_default
 
         if bg_color is None:
-            # 無主背景色時：淡黃後備，深色模式提高 alpha 讓 span 仍可辨識。
+            # 無主背景色時：淡黃後備
             bg_color = _hex_to_qcolor("#FFF59D", alpha=fallback_alpha)
 
         fmt.setBackground(bg_color)
-        # 深色模式下標註背景變得不透明度高，強制深色文字色保證閱讀對比。
-        if dark and bg_color is not None:
-            fmt.setForeground(QColor("#1B1B1B"))
+        if bg_color is not None:
+            fmt.setForeground(_text_color_for_bg(bg_color))
+            
         if underline_style != QTextCharFormat.NoUnderline:
             fmt.setUnderlineStyle(underline_style)
             if underline_color is not None:

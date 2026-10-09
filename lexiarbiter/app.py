@@ -1012,7 +1012,7 @@ class MainWindow(QMainWindow):
             
         # 1. 暫時高亮解釋段落
         if getattr(ann, "explanation_start", None) is not None and getattr(ann, "explanation_end", None) is not None:
-            color = self.prefs.ui.get("explanation_highlight_color", "#B2DFDB")
+            color = self.prefs.ui.get("explanation_highlight_color", "#90CAF9")
             self.editor.highlight_explanation(ann.explanation_start, ann.explanation_end, color)
             
         # 2. 在術語上方顯示資訊卡
