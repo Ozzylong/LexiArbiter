@@ -1088,15 +1088,23 @@ class MainWindow(QMainWindow):
                     
                     concept_id = None
                     if b_name:
-                        concept_id = "C_" + uuid.uuid4().hex[:8]
-                        self.doc.concepts[concept_id] = b_name
+                        existing_id = next((cid for cid, name in self.doc.concepts.items() if name == b_name), None)
+                        if existing_id:
+                            concept_id = existing_id
+                        else:
+                            concept_id = "C_" + uuid.uuid4().hex[:8]
+                            self.doc.concepts[concept_id] = b_name
                     elif b_id:
                         concept_id = b_id
                         
                     broader_id = None
                     if br_name:
-                        broader_id = "C_" + uuid.uuid4().hex[:8]
-                        self.doc.concepts[broader_id] = br_name
+                        existing_id = next((cid for cid, name in self.doc.concepts.items() if name == br_name), None)
+                        if existing_id:
+                            broader_id = existing_id
+                        else:
+                            broader_id = "C_" + uuid.uuid4().hex[:8]
+                            self.doc.concepts[broader_id] = br_name
                     elif br_id:
                         broader_id = br_id
                         
