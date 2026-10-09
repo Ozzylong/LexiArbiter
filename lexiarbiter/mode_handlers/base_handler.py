@@ -41,5 +41,14 @@ class BaseModeHandler:
         return False
 
 
+    def should_suppress_context_menu_entirely(self) -> bool:
+        """若回傳 True，則完全不顯示右鍵選單（連選單都不建構）。
+
+        用於 handler 正在進行多步驟操作（如選取解釋段落），
+        右鍵不應中斷流程或彈出不相關的選單。
+        Handler 可在此方法內自行處理右鍵的替代行為（如取消操作）。
+        """
+        return False
+
     def suppress_default_context_menu(self, ann) -> bool:
         return False

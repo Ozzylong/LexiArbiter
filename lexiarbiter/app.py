@@ -935,6 +935,8 @@ class MainWindow(QMainWindow):
                             sel_start: int, sel_end: int):
         if self.doc is None:
             return
+        if self.mode_handler.should_suppress_context_menu_entirely():
+            return  # handler 已自行處理（如取消 pending 操作），不建構選單
         has_selection = sel_end > sel_start
 
         # 如果有選取文字，在選單最上方加入「複製」選項

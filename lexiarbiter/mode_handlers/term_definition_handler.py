@@ -315,5 +315,22 @@ class TermDefinitionHandler(BaseModeHandler):
         self.app.editor.refresh_highlights()
 
 
+    def should_suppress_context_menu_entirely(self) -> bool:
+        """在 pending 選取解釋段落狀態下，完全抑制右鍵選單。
+
+        右鍵改為取消目前的新增/編輯操作（與 Esc 行為相同）。
+        """
+        if getattr(self.app, "_pending_term_info", None):
+            self.app._hide_hud()
+            self.app.editor.clear_pending_term_highlight()
+            self.app.editor.clear_explanation_highlight()
+            self.app._pending_term_info = None
+            self.app.status.showMessage("已取消術語標註。", 3000)
+            cursor = self.app.editor.textCursor()
+            cursor.clearSelection()
+            self.app.editor.setTextCursor(cursor)
+            return True
+        return False
+
     def suppress_default_context_menu(self, ann) -> bool:
         return ann is not None
