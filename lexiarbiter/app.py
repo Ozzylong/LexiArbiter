@@ -382,6 +382,7 @@ class MainWindow(QMainWindow):
         if getattr(self, "_pending_term_info", None):
             self._hide_hud()
             self.editor.clear_pending_term_highlight()
+            self.editor.clear_explanation_highlight()
             self._pending_term_info = None
             self.status.showMessage("已取消術語標註。", 3000)
             cursor = self.editor.textCursor()
