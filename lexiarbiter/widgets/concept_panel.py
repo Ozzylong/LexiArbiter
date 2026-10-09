@@ -69,12 +69,11 @@ class TermConceptDialog(QDialog):
         self.broader_combo = QComboBox()
         self.broader_combo.setEditable(True)
         self.broader_combo.setMaxVisibleItems(10)
-        self.broader_combo.addItem(" (無) ", None)
         for cid, name in sorted_concepts:
             self.broader_combo.addItem(name, cid)
         self.broader_combo.setCurrentText(term_text)
         
-        comp_broader = QCompleter([" (無) "] + concept_names, self)
+        comp_broader = QCompleter(concept_names, self)
         comp_broader.setCaseSensitivity(Qt.CaseInsensitive)
         comp_broader.setFilterMode(Qt.MatchContains)
         self.broader_combo.setCompleter(comp_broader)
@@ -107,7 +106,7 @@ class TermConceptDialog(QDialog):
             QMessageBox.warning(self, "錯誤", "綁定概念不能留空！\n若無現有概念，請直接輸入術語本身作為新概念。")
             return
         if not self.broader_combo.currentText().strip():
-            QMessageBox.warning(self, "錯誤", "上位概念不能留空！\n若無上位概念，請選擇「 (無) 」或輸入術語本身。")
+            QMessageBox.warning(self, "錯誤", "上位概念不能留空！\n若無上位概念，請輸入術語本身。")
             return
         super().accept()
 
@@ -117,7 +116,7 @@ class TermConceptDialog(QDialog):
 
     def _extract_combo_data(self, combo) -> tuple[str | None, str | None]:
         text = combo.currentText().strip()
-        if not text or text == "(無)":
+        if not text:
             return None, None
         
         # 檢查是否在既有清單中
