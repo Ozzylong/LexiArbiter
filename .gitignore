@@ -16,6 +16,7 @@ logs/
 documents/
 scripts/
 CLAUDE.md
+GEMINI.md
 assets/*
 !assets/LexiArbiter_icon.ico
 !assets/LexiArbiter_icon.png

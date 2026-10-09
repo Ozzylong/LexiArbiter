@@ -21,7 +21,10 @@ class Annotation:
     labels: dict[str, str] = field(default_factory=dict)
     id: str = field(default_factory=lambda: uuid.uuid4().hex[:12])
     note: str = ""
-    concept_id: Optional[str] = None  # 新增：關聯的概念 ID
+    concept_id: Optional[str] = None  # 綁定概念 ID
+    explanation_start: Optional[int] = None
+    explanation_end: Optional[int] = None
+    broader_concept_id: Optional[str] = None
 
     def overlaps(self, other: "Annotation") -> bool:
         return not (self.end <= other.start or other.end <= self.start)
@@ -40,7 +43,10 @@ class Annotation:
             end=int(data["end"]),
             labels=dict(data.get("labels", {})),
             note=data.get("note", ""),
-            concept_id=data.get("concept_id")  # 讀取概念 ID
+            concept_id=data.get("concept_id"),
+            explanation_start=data.get("explanation_start"),
+            explanation_end=data.get("explanation_end"),
+            broader_concept_id=data.get("broader_concept_id")
         )
 
 

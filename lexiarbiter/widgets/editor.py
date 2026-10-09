@@ -96,6 +96,12 @@ def _is_dark_palette(widget) -> bool:
     return widget.palette().color(QPalette.Base).lightness() < 128
 
 
+def _text_color_for_bg(bg_color: QColor) -> QColor:
+    """根據背景顏色的明度回傳高對比的文字顏色（深色或淺色）。"""
+    luminance = (0.299 * bg_color.red() + 0.587 * bg_color.green() + 0.114 * bg_color.blue()) / 255.0
+    return QColor("#1B1B1B") if luminance > 0.5 else QColor("#FAFAFA")
+
+
 class AnnotationEditor(QTextEdit):
     """Read-only-ish text view that renders annotations as background highlights.
 
@@ -130,6 +136,8 @@ class AnnotationEditor(QTextEdit):
         self._context_menu_builder = None
         # 追蹤是不是「正在拖左鍵」；右鍵 / 中鍵 / 鍵盤選取都不應觸發 popup。
         self._left_drag_active: bool = False
+        self._expl_highlight: Optional[tuple[int, int, str]] = None
+        self._pending_term_highlight: Optional[tuple[int, int, str]] = None
 
         # 系統深 / 淺色主題切換時自動重繪。Qt 6.5+ 才有此 signal，
         # 舊版直接 fallback 到「重啟程式才生效」。
@@ -205,14 +213,81 @@ class AnnotationEditor(QTextEdit):
             self._left_drag_active = False
             if self.has_selection():
                 self.selection_finished.emit(ev.globalPosition().toPoint())
+            else:
+                cursor = self.cursorForPosition(ev.position().toPoint())
+                d_pos = cursor.position()
+                if self._omap and self._doc:
+                    storage_pos = self._omap.to_storage(d_pos)
+                    anns = self._doc.annotations_at(storage_pos)
+                    if anns:
+                        self.annotation_clicked.emit(anns[-1].id)
 
     # ------------------------------------------------------ highlight render
+
+    def highlight_explanation(self, start: int, end: int, color: str | QColor):
+        self._expl_highlight = (start, end, color)
+        self.refresh_highlights()
+
+    def clear_explanation_highlight(self):
+        self._expl_highlight = None
+        self.refresh_highlights()
+
+    def highlight_pending_term(self, start: int, end: int, color: str | QColor):
+        self._pending_term_highlight = (start, end, color)
+        self.refresh_highlights()
+
+    def clear_pending_term_highlight(self):
+        self._pending_term_highlight = None
+        self.refresh_highlights()
 
     def refresh_highlights(self):
         if self._doc is None or self._mode is None or self._omap is None:
             return
         try:
             selections = []
+            
+            # 優先繪製解釋段落高亮 (放底層)
+            if self._expl_highlight:
+                start, end, color = self._expl_highlight
+                sel = QTextEdit.ExtraSelection()
+                cursor = self.textCursor()
+                d_start = self._omap.to_display(start)
+                d_end = self._omap.to_display(end)
+                cursor.setPosition(d_start)
+                cursor.setPosition(d_end, QTextCursor.KeepAnchor)
+                sel.cursor = cursor
+                fmt = QTextCharFormat()
+                if isinstance(color, QColor):
+                    bg_color = color
+                else:
+                    bg_color = _hex_to_qcolor(color, alpha=255)
+                if bg_color:
+                    fmt.setBackground(bg_color)
+                    fmt.setForeground(_text_color_for_bg(bg_color))
+                sel.format = fmt
+                selections.append(sel)
+                
+            # 繪製暫時的待確認術語高亮
+            if getattr(self, "_pending_term_highlight", None):
+                start, end, color = self._pending_term_highlight
+                sel = QTextEdit.ExtraSelection()
+                cursor = self.textCursor()
+                d_start = self._omap.to_display(start)
+                d_end = self._omap.to_display(end)
+                cursor.setPosition(d_start)
+                cursor.setPosition(d_end, QTextCursor.KeepAnchor)
+                sel.cursor = cursor
+                fmt = QTextCharFormat()
+                if isinstance(color, QColor):
+                    bg_color = color
+                else:
+                    bg_color = _hex_to_qcolor(color, alpha=255)
+                if bg_color:
+                    fmt.setBackground(bg_color)
+                    fmt.setForeground(_text_color_for_bg(bg_color))
+                sel.format = fmt
+                selections.append(sel)
+                
             for ann in self._doc.annotations:
                 sel = QTextEdit.ExtraSelection()
                 cursor = self.textCursor()
@@ -236,14 +311,14 @@ class AnnotationEditor(QTextEdit):
         """First group with a non-null color drives the background.
         Other group labels are reflected via underline style.
 
-        渲染參數依當下 palette（深 / 淺）自動切換：深色模式提高背景 alpha 並
-        強制反白標註內文字色，底線色則固定取近黑或近白以保證對比。
+        渲染參數：文字高亮維持 100% 不透明 (Alpha=255) 以對齊按鈕色彩，
+        並根據背景明亮度自動切換深色或淺色文字，確保對比度。
         """
         if self._mode is None:
             return
         dark = _is_dark_palette(self)
-        bg_alpha = 180 if dark else 130
-        fallback_alpha = 90 if dark else 50
+        bg_alpha = 255
+        fallback_alpha = 255
         # 底線色一律取與編輯器背景對比最強的近黑 / 近白，不再從主背景色 darker/lighter 派生
         underline_default = QColor("#ECEFF1") if dark else QColor("#1B1B1B")
 
@@ -277,13 +352,13 @@ class AnnotationEditor(QTextEdit):
                 underline_color = underline_default
 
         if bg_color is None:
-            # 無主背景色時：淡黃後備，深色模式提高 alpha 讓 span 仍可辨識。
+            # 無主背景色時：淡黃後備
             bg_color = _hex_to_qcolor("#FFF59D", alpha=fallback_alpha)
 
         fmt.setBackground(bg_color)
-        # 深色模式下標註背景變得不透明度高，強制深色文字色保證閱讀對比。
-        if dark and bg_color is not None:
-            fmt.setForeground(QColor("#1B1B1B"))
+        if bg_color is not None:
+            fmt.setForeground(_text_color_for_bg(bg_color))
+            
         if underline_style != QTextCharFormat.NoUnderline:
             fmt.setUnderlineStyle(underline_style)
             if underline_color is not None:

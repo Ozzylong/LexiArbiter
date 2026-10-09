@@ -6,64 +6,148 @@ from PySide6.QtWidgets import (
     QLabel, QWidget, QMessageBox
 )
 
-class ConceptSelectionDialog(QDialog):
-    """彈出視窗：讓使用者從現有概念挑選，或輸入新概念。"""
-    def __init__(self, concepts: dict[str, str], default_text: str = "", parent=None):
+class TermConceptDialog(QDialog):
+    """彈出視窗：設定術語的綁定概念與上位概念，並做最終確認。"""
+    
+    def __init__(self, concepts: dict[str, str], term_text: str, explanation_text: str, default_bound_id: str | None = None, default_broader_id: str | None = None, parent=None, is_edit_mode: bool = False):
         super().__init__(parent)
-        self.setWindowTitle("選擇或新增對應概念")
-        self.resize(350, 450)
+        self.setWindowTitle("設定概念與標註確認")
+        self.resize(600, 420)
+        
+        # 放大預設字體
+        font = self.font()
+        font.setPointSize(font.pointSize() + 1)
+        self.setFont(font)
+        
+        # 追蹤是否要「回上一步」
+        self.wants_back = False
         
         layout = QVBoxLayout(self)
         
-        layout.addWidget(QLabel("1. 從現有概念選擇："))
-        self.list_widget = QListWidget()
-        # 依最近加入(或字母)排序顯示
-        self._concept_map = {}
-        for cid, name in concepts.items():
-            self.list_widget.addItem(name)
-            self._concept_map[name] = cid
-        layout.addWidget(self.list_widget)
-        # 將清單依照筆畫/字母順序排序
-        self.list_widget.sortItems(Qt.AscendingOrder)
-
-        layout.addWidget(QLabel("2. 或直接輸入新概念："))
-        self.input_edit = QLineEdit()
-        self.input_edit.setPlaceholderText("輸入新術語概念...")
-        # 自動將反白的文字填入輸入框
-        self.input_edit.setText(default_text) 
-        # 選取框內所有文字，方便使用者如果不滿意可以直接打字覆蓋
-        self.input_edit.selectAll()
-        layout.addWidget(self.input_edit)
-
-        # 按鈕區
+        from PySide6.QtWidgets import QPlainTextEdit, QLineEdit, QCompleter
+        
+        # [唯讀資訊區]
+        term_layout = QHBoxLayout()
+        term_layout.addWidget(QLabel("<b>術語：</b>"))
+        txt_term = QLineEdit(term_text)
+        txt_term.setReadOnly(True)
+        term_layout.addWidget(txt_term)
+        layout.addLayout(term_layout)
+        
+        layout.addWidget(QLabel("<b>對應解釋：</b>"))
+        txt_exp = QPlainTextEdit(explanation_text)
+        txt_exp.setReadOnly(True)
+        txt_exp.setMaximumHeight(100)
+        layout.addWidget(txt_exp)
+        
+        layout.addSpacing(10)
+        
+        # [概念設定區]
+        from PySide6.QtWidgets import QComboBox
+        # 為了排序建立 list
+        sorted_concepts = sorted(concepts.items(), key=lambda x: x[1])
+        concept_names = [name for cid, name in sorted_concepts]
+        
+        layout.addWidget(QLabel("<b>1. 術語對應概念：</b>"))
+        self.bound_combo = QComboBox()
+        self.bound_combo.setEditable(True)
+        self.bound_combo.setMaxVisibleItems(10)
+        for cid, name in sorted_concepts:
+            self.bound_combo.addItem(name, cid)
+            
+        if default_bound_id and default_bound_id in concepts:
+            self.bound_combo.setCurrentText(concepts[default_bound_id])
+        else:
+            self.bound_combo.setCurrentText(term_text) # 預設帶入術語文字
+        
+        comp_bound = QCompleter(concept_names, self)
+        comp_bound.setCaseSensitivity(Qt.CaseInsensitive)
+        comp_bound.setFilterMode(Qt.MatchContains)
+        self.bound_combo.setCompleter(comp_bound)
+        
+        layout.addWidget(self.bound_combo)
+        
+        layout.addSpacing(10)
+        
+        layout.addWidget(QLabel("<b>2. 術語的上層概念：</b>"))
+        self.broader_combo = QComboBox()
+        self.broader_combo.setEditable(True)
+        self.broader_combo.setMaxVisibleItems(10)
+        for cid, name in sorted_concepts:
+            self.broader_combo.addItem(name, cid)
+            
+        if default_broader_id and default_broader_id in concepts:
+            self.broader_combo.setCurrentText(concepts[default_broader_id])
+        else:
+            self.broader_combo.setCurrentText(term_text)
+            
+        comp_broader = QCompleter(concept_names, self)
+        comp_broader.setCaseSensitivity(Qt.CaseInsensitive)
+        comp_broader.setFilterMode(Qt.MatchContains)
+        self.broader_combo.setCompleter(comp_broader)
+        
+        layout.addWidget(self.broader_combo)
+        
+        layout.addStretch()
+        
+        # [按鈕區]
         btn_layout = QHBoxLayout()
-        self.btn_ok = QPushButton("確定 (Enter)")
+        self.btn_ok = QPushButton("確定並儲存")
         self.btn_ok.setStyleSheet("background-color: #2196F3; color: white; font-weight: bold; padding: 6px; border-radius: 4px;")
         self.btn_ok.clicked.connect(self.accept)
-        self.btn_cancel = QPushButton("取消")
+        
+        self.btn_back = QPushButton("回上一步 (重選解釋)")
+        if is_edit_mode:
+            self.btn_back.hide()
+        self.btn_back.setStyleSheet("background-color: #FF9800; color: white; padding: 6px; border-radius: 4px;")
+        self.btn_back.clicked.connect(self._on_back_clicked)
+        
+        self.btn_cancel = QPushButton("取消 (放棄標註)")
         self.btn_cancel.setStyleSheet("background-color: #546E7A; color: white; padding: 6px; border-radius: 4px;")
         self.btn_cancel.clicked.connect(self.reject)
-
-        # 將按鈕推到對話框的右下角
-        btn_layout.addStretch()
         
-        # 將 OK 放在前面 (左邊)，Cancel 放在後面 (右邊)
         btn_layout.addWidget(self.btn_ok)
+        btn_layout.addWidget(self.btn_back)
         btn_layout.addWidget(self.btn_cancel)
         layout.addLayout(btn_layout)
 
-        # 點擊清單時自動填入輸入框
-        self.list_widget.itemClicked.connect(lambda item: self.input_edit.setText(item.text()))
-        self.list_widget.itemDoubleClicked.connect(self.accept)
+    def accept(self):
+        if not self.bound_combo.currentText().strip():
+            QMessageBox.warning(self, "錯誤", "綁定概念不能留空！\n若無現有概念，請直接輸入術語本身作為新概念。")
+            return
+        if not self.broader_combo.currentText().strip():
+            QMessageBox.warning(self, "錯誤", "上位概念不能留空！\n若無上位概念，請輸入術語本身。")
+            return
+        super().accept()
 
-    def get_result(self) -> tuple[str | None, str | None]:
-        """回傳 (已存在的 ID, 新增的名稱)。若輸入框為空則回傳 (None, None)。"""
-        text = self.input_edit.text().strip()
+    def _on_back_clicked(self):
+        self.wants_back = True
+        self.reject()
+
+    def _extract_combo_data(self, combo) -> tuple[str | None, str | None]:
+        text = combo.currentText().strip()
         if not text:
             return None, None
-        if text in self._concept_map:
-            return self._concept_map[text], None
+        
+        # 檢查是否在既有清單中
+        idx = combo.findText(text)
+        if idx >= 0:
+            # 找到現有的，回傳它的 ID
+            cid = combo.itemData(idx)
+            if cid is not None:
+                return cid, None
+        # 使用者手打的新概念
         return None, text
+
+    def get_results(self) -> tuple[str | None, str | None, str | None, str | None, bool]:
+        """回傳 (bound_id, bound_new_name, broader_id, broader_new_name, wants_back)"""
+        if self.wants_back:
+            return None, None, None, None, True
+            
+        b_id, b_name = self._extract_combo_data(self.bound_combo)
+        br_id, br_name = self._extract_combo_data(self.broader_combo)
+        
+        return b_id, b_name, br_id, br_name, False
 
 
 class ConceptSidebar(QWidget):

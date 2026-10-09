@@ -31,9 +31,10 @@ from .core.config import (
 )
 from .core.logger import current_log_dir
 from .core.models import Annotation, Document, detect_same_group_conflicts
+from .mode_handlers import get_handler
 from .widgets.editor import AnnotationEditor
 from .widgets.file_panel import FilePanel
-from .widgets.concept_panel import ConceptSelectionDialog, ConceptSidebar
+from .widgets.concept_panel import TermConceptDialog, ConceptSidebar
 
 
 # Autosave cadence. 60s is a good compromise — short enough that worst-case
@@ -96,6 +97,7 @@ class MainWindow(QMainWindow):
         self.prefs: UserPreferences = UserPreferences.load()
         self.modes: list[AnnotationMode] = list_annotation_modes()
         self.mode: AnnotationMode = self._select_initial_mode()
+        self.mode_handler = get_handler(self.mode.id, self)
 
         self.doc: Optional[Document] = None
 
@@ -104,6 +106,7 @@ class MainWindow(QMainWindow):
         self.editor.set_context_menu_builder(self._build_context_menu)
         self.editor.selection_changed.connect(self._on_selection_changed)
         self.editor.selection_finished.connect(self._show_quick_label_popup)
+        self.editor.annotation_clicked.connect(self._on_annotation_clicked)
 
         self.file_panel = FilePanel()
         self.file_panel.file_open_requested.connect(self._handle_file_open_requested)
@@ -137,12 +140,41 @@ class MainWindow(QMainWindow):
         # Autosave: 上次寫入的 autosave 檔位置；正式存檔成功後刪除這個檔，
         # 避免 save-as 之後留下指向舊位置的孤兒。
         self._last_autosave_path: Optional[Path] = None
-        # 「開啟資料夾…」記住上次選的目錄，僅 session 內有效。
         self._last_browse_dir: Optional[Path] = None
+        
+        # Term definition state
+        self._pending_term_info: Optional[tuple[int, int, str, str]] = None
+        self._setup_hud()
+        
         self._autosave_timer = QTimer(self)
         self._autosave_timer.setInterval(_AUTOSAVE_INTERVAL_MS)
         self._autosave_timer.timeout.connect(self._autosave_tick)
         self._autosave_timer.start()
+
+    # ---------------------------------------------------- HUD for term definition
+    def _setup_hud(self):
+        self.hud_label = QLabel("正在選取解釋段落...", self.editor)
+        self.hud_label.setStyleSheet("""
+            background-color: rgba(33, 150, 243, 0.9);
+            color: white;
+            font-size: 16px;
+            font-weight: bold;
+            padding: 10px;
+            border-radius: 6px;
+        """)
+        self.hud_label.hide()
+
+    def _show_hud(self):
+        self.hud_label.adjustSize()
+        w = self.editor.width()
+        x = (w - self.hud_label.width()) // 2
+        self.hud_label.move(x, 20)
+        self.hud_label.show()
+        self.editor.viewport().setCursor(Qt.CrossCursor)
+
+    def _hide_hud(self):
+        self.hud_label.hide()
+        self.editor.viewport().setCursor(Qt.IBeamCursor)
 
     # ---------------------------------------------------- mode resolution
 
@@ -341,7 +373,21 @@ class MainWindow(QMainWindow):
 
     def _setup_app_shortcuts(self):
         # menu actions already carry shortcuts; nothing additional here.
-        pass
+        from PySide6.QtGui import QShortcut, QKeySequence
+        from PySide6.QtCore import Qt
+        self._esc_shortcut = QShortcut(QKeySequence(Qt.Key_Escape), self)
+        self._esc_shortcut.activated.connect(self._handle_escape)
+
+    def _handle_escape(self):
+        if getattr(self, "_pending_term_info", None):
+            self._hide_hud()
+            self.editor.clear_pending_term_highlight()
+            self.editor.clear_explanation_highlight()
+            self._pending_term_info = None
+            self.status.showMessage("已取消術語標註。", 3000)
+            cursor = self.editor.textCursor()
+            cursor.clearSelection()
+            self.editor.setTextCursor(cursor)
 
     # --------------------------------------------------------- annotate ops
 
@@ -418,26 +464,10 @@ class MainWindow(QMainWindow):
             self.status.showMessage("請先開啟一個檔案再進行標註。", 4000)
             return
 
+        if self.mode_handler.handle_apply_label(group_id, label_id):
+            return
+        
         concept_id = None
-        # 如果使用者設定開啟 Popup，檢查是否為 term_definition 模式、是否開啟彈窗、以及是否有選取文字，則跳出概念選擇器
-        if self.mode.id == "term_definition" and self.prefs.behavior.get("show_concept_popup", True) and self.editor.has_selection():
-            
-            # 抓取畫面中反白的文字
-            selected_text = self.editor.textCursor().selectedText().strip()
-                
-            # 將選取的文字作為 default_text 傳入對話框
-            dlg = ConceptSelectionDialog(self.doc.concepts, default_text=selected_text, parent=self)
-            if dlg.exec():
-                selected_id, new_name = dlg.get_result()
-                if new_name:
-                     # 建立新概念
-                    concept_id = "C_" + uuid.uuid4().hex[:8]
-                    self.doc.concepts[concept_id] = new_name
-                    self.concept_panel.refresh(self.doc)
-                else:
-                    concept_id = selected_id
-            else:
-                return # 使用者按取消，放棄標註
        
         try:
             if not self.editor.has_selection():
@@ -873,6 +903,7 @@ class MainWindow(QMainWindow):
                     a.setChecked(a.data() == self.mode.id)
                 return
         self.mode = target
+        self.mode_handler = get_handler(self.mode.id, self)
         self.concept_panel.setVisible(self.mode.id == "term_definition")
         if persist:
             self.prefs.active_mode_id = target.id
@@ -904,6 +935,8 @@ class MainWindow(QMainWindow):
                             sel_start: int, sel_end: int):
         if self.doc is None:
             return
+        if self.mode_handler.should_suppress_context_menu_entirely():
+            return  # handler 已自行處理（如取消 pending 操作），不建構選單
         has_selection = sel_end > sel_start
 
         # 如果有選取文字，在選單最上方加入「複製」選項
@@ -914,9 +947,10 @@ class MainWindow(QMainWindow):
             menu.addAction(act_copy)
             menu.addSeparator()
 
-        # If hovering over an annotation, show its info.
-        if ann_id is not None:
-            ann = self.doc.find_annotation(ann_id)
+        ann = self.doc.find_annotation(ann_id) if ann_id else None
+
+        if not self.mode_handler.suppress_default_context_menu(ann):
+            # If hovering over an annotation, show its info.
             if ann is not None:
                 lbl_lines = []
                 for g in self.mode.groups:
@@ -930,18 +964,19 @@ class MainWindow(QMainWindow):
                 menu.addAction(head)
                 menu.addSeparator()
 
-        for g in self.mode.groups:
-            sub = menu.addMenu(g.name)
-            for lb in g.labels:
-                shortcut = self.prefs.label_shortcut(g.id, lb.id, lb.shortcut)
-                text = lb.name + (f"\t{shortcut}" if shortcut else "")
-                act = QAction(_swatch_icon(lb.color), text, sub)
-                act.triggered.connect(self._make_label_handler(g.id, lb.id))
-                sub.addAction(act)
-            sub.addSeparator()
-            act_clear = QAction(f"清除「{g.name}」", sub)
-            act_clear.triggered.connect(self._make_clear_group_handler(g.id))
-            sub.addAction(act_clear)
+            for g in self.mode.groups:
+                sub = menu.addMenu(g.name)
+                for lb in g.labels:
+                    shortcut = self.prefs.label_shortcut(g.id, lb.id, lb.shortcut)
+                    text = lb.name + (f"\t{shortcut}" if shortcut else "")
+                    act = QAction(_swatch_icon(lb.color), text, sub)
+                    act.triggered.connect(self._make_label_handler(g.id, lb.id))
+                    sub.addAction(act)
+                sub.addSeparator()
+                act_clear = QAction(f"清除「{g.name}」", sub)
+                act_clear.triggered.connect(self._make_clear_group_handler(g.id))
+                sub.addAction(act_clear)
+        self.mode_handler.add_context_menu_actions(menu, ann, sel_start, sel_end)
 
         menu.addSeparator()
         act_remove = QAction("刪除此處標註", menu)
@@ -952,11 +987,18 @@ class MainWindow(QMainWindow):
 
     # ----------------------------------------------- 反白後自動跳出快速選單
 
+    def _on_annotation_clicked(self, ann_id: str):
+        if self.mode_handler.on_annotation_clicked(ann_id):
+            return
+
     def _show_quick_label_popup(self, global_pos: QPoint):
         """滑鼠拖選結束時呼叫；在選取附近彈出緊湊水平的標籤選單。
 
         以 prefs 開關控制；沒開檔案時不跳。
         """
+        if self.mode_handler.handle_selection_finished(global_pos):
+            return
+
         if not self.prefs.behavior.get("auto_popup_on_selection", True):
             return
         if self.doc is None:
