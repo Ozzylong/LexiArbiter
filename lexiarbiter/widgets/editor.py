@@ -224,7 +224,7 @@ class AnnotationEditor(QTextEdit):
 
     # ------------------------------------------------------ highlight render
 
-    def highlight_explanation(self, start: int, end: int, color: str):
+    def highlight_explanation(self, start: int, end: int, color: str | QColor):
         self._expl_highlight = (start, end, color)
         self.refresh_highlights()
 
@@ -232,7 +232,7 @@ class AnnotationEditor(QTextEdit):
         self._expl_highlight = None
         self.refresh_highlights()
 
-    def highlight_pending_term(self, start: int, end: int, color: str):
+    def highlight_pending_term(self, start: int, end: int, color: str | QColor):
         self._pending_term_highlight = (start, end, color)
         self.refresh_highlights()
 
@@ -257,7 +257,10 @@ class AnnotationEditor(QTextEdit):
                 cursor.setPosition(d_end, QTextCursor.KeepAnchor)
                 sel.cursor = cursor
                 fmt = QTextCharFormat()
-                bg_color = _hex_to_qcolor(color, alpha=255)
+                if isinstance(color, QColor):
+                    bg_color = color
+                else:
+                    bg_color = _hex_to_qcolor(color, alpha=255)
                 if bg_color:
                     fmt.setBackground(bg_color)
                     fmt.setForeground(_text_color_for_bg(bg_color))
@@ -275,7 +278,10 @@ class AnnotationEditor(QTextEdit):
                 cursor.setPosition(d_end, QTextCursor.KeepAnchor)
                 sel.cursor = cursor
                 fmt = QTextCharFormat()
-                bg_color = _hex_to_qcolor(color, alpha=255)
+                if isinstance(color, QColor):
+                    bg_color = color
+                else:
+                    bg_color = _hex_to_qcolor(color, alpha=255)
                 if bg_color:
                     fmt.setBackground(bg_color)
                     fmt.setForeground(_text_color_for_bg(bg_color))

@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (
 class TermConceptDialog(QDialog):
     """彈出視窗：設定術語的綁定概念與上位概念，並做最終確認。"""
     
-    def __init__(self, concepts: dict[str, str], term_text: str, explanation_text: str, parent=None):
+    def __init__(self, concepts: dict[str, str], term_text: str, explanation_text: str, default_bound_id: str | None = None, default_broader_id: str | None = None, parent=None):
         super().__init__(parent)
         self.setWindowTitle("設定概念與標註確認")
         self.resize(600, 420)
@@ -54,7 +54,11 @@ class TermConceptDialog(QDialog):
         self.bound_combo.setMaxVisibleItems(10)
         for cid, name in sorted_concepts:
             self.bound_combo.addItem(name, cid)
-        self.bound_combo.setCurrentText(term_text) # 預設帶入術語文字
+            
+        if default_bound_id and default_bound_id in concepts:
+            self.bound_combo.setCurrentText(concepts[default_bound_id])
+        else:
+            self.bound_combo.setCurrentText(term_text) # 預設帶入術語文字
         
         comp_bound = QCompleter(concept_names, self)
         comp_bound.setCaseSensitivity(Qt.CaseInsensitive)
@@ -71,8 +75,12 @@ class TermConceptDialog(QDialog):
         self.broader_combo.setMaxVisibleItems(10)
         for cid, name in sorted_concepts:
             self.broader_combo.addItem(name, cid)
-        self.broader_combo.setCurrentText(term_text)
-        
+            
+        if default_broader_id and default_broader_id in concepts:
+            self.broader_combo.setCurrentText(concepts[default_broader_id])
+        else:
+            self.broader_combo.setCurrentText(term_text)
+            
         comp_broader = QCompleter(concept_names, self)
         comp_broader.setCaseSensitivity(Qt.CaseInsensitive)
         comp_broader.setFilterMode(Qt.MatchContains)
