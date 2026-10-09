@@ -39,7 +39,9 @@ class TermDefinitionHandler(BaseModeHandler):
             exact_matches = [a for a in self.app.doc.annotations if a.start == s_exp and a.end == e_exp]
             if exact_matches:
                 self.on_annotation_clicked(exact_matches[-1].id)
-                self.app.editor.clearSelection()
+                cursor = self.app.editor.textCursor()
+                cursor.clearSelection()
+                self.app.editor.setTextCursor(cursor)
                 return True
 
         if not getattr(self.app, "_pending_term_info", None):
