@@ -94,6 +94,10 @@ class MainWindow(QMainWindow):
         self.resize(1280, 820)
 
         self.prefs: UserPreferences = UserPreferences.load()
+        # 標籤輸入方式二擇一（只在啟動時讀一次）：
+        #   True  → 選取文字後跳出 popup 選單，工具列不顯示標籤按鈕
+        #   False → 不跳 popup，改用上方工具列的標籤按鈕
+        self.use_popup: bool = self.prefs.behavior.get("auto_popup_on_selection", True)
         self.modes: list[AnnotationMode] = list_annotation_modes()
         self.mode: AnnotationMode = self._select_initial_mode()
 
@@ -103,7 +107,8 @@ class MainWindow(QMainWindow):
         self.editor = AnnotationEditor()
         self.editor.set_context_menu_builder(self._build_context_menu)
         self.editor.selection_changed.connect(self._on_selection_changed)
-        self.editor.selection_finished.connect(self._show_quick_label_popup)
+        if self.use_popup:
+            self.editor.selection_finished.connect(self._show_quick_label_popup)
 
         self.file_panel = FilePanel()
         self.file_panel.file_open_requested.connect(self._handle_file_open_requested)
@@ -296,7 +301,6 @@ class MainWindow(QMainWindow):
         a_export = tb.addAction(_swatch_icon("#FFFFFF"), "匯出 .txt")
         a_export.triggered.connect(self.action_export)
 
-        tb.addSeparator()
         self._populate_label_buttons()
 
     def _populate_label_buttons(self):
@@ -306,9 +310,12 @@ class MainWindow(QMainWindow):
                 self.toolbar.removeAction(a)
         self._label_button_actions = []
 
-        for gi, g in enumerate(self.mode.groups):
-            if gi > 0:
-                self._label_button_actions.append(self.toolbar.addSeparator())
+        # popup 模式下標籤只從 popup 選單套用，工具列不放標籤按鈕。
+        if self.use_popup:
+            return
+
+        for g in self.mode.groups:
+            self._label_button_actions.append(self.toolbar.addSeparator())
             grp_label = QLabel(f"  {g.name}：")
             self._label_button_actions.append(self.toolbar.addWidget(grp_label))
             for lb in g.labels:
@@ -955,10 +962,8 @@ class MainWindow(QMainWindow):
     def _show_quick_label_popup(self, global_pos: QPoint):
         """滑鼠拖選結束時呼叫；在選取附近彈出緊湊水平的標籤選單。
 
-        以 prefs 開關控制；沒開檔案時不跳。
+        只有在 ``use_popup`` 為 True 時才會在 ``__init__`` 接上這個 slot；沒開檔案時不跳。
         """
-        if not self.prefs.behavior.get("auto_popup_on_selection", True):
-            return
         if self.doc is None:
             return
 

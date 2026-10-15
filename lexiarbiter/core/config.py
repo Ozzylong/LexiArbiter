@@ -225,6 +225,7 @@ DEFAULT_PREFERENCES: dict = {
     "behavior": {
         "confirm_unsaved_on_switch": True,
         "warn_partial_groups_on_export": True,
+        # True：選取後跳 popup 標籤選單、工具列不顯示標籤按鈕；False：改用工具列標籤按鈕。需重啟生效。
         "auto_popup_on_selection": True,
         "show_concept_popup": True,  # 新增：標註時是否跳出概念選擇視窗
     },
