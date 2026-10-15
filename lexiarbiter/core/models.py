@@ -22,6 +22,9 @@ class Annotation:
     id: str = field(default_factory=lambda: uuid.uuid4().hex[:12])
     note: str = ""
     concept_id: Optional[str] = None  # 新增：關聯的概念 ID
+    explanation_start: Optional[int] = None
+    explanation_end: Optional[int] = None
+    broader_concept_id: Optional[str] = None
 
     def overlaps(self, other: "Annotation") -> bool:
         return not (self.end <= other.start or other.end <= self.start)
@@ -40,7 +43,10 @@ class Annotation:
             end=int(data["end"]),
             labels=dict(data.get("labels", {})),
             note=data.get("note", ""),
-            concept_id=data.get("concept_id")  # 讀取概念 ID
+            concept_id=data.get("concept_id"),  # 讀取概念 ID
+            explanation_start=data.get("explanation_start"),
+            explanation_end=data.get("explanation_end"),
+            broader_concept_id=data.get("broader_concept_id")
         )
 
 
@@ -91,10 +97,26 @@ class Document:
     def annotations_in_range_for_group(
         self, start: int, end: int, group_id: str
     ) -> list[Annotation]:
-        return [
-            a for a in self.annotations
-            if not (a.end <= start or end <= a.start) and group_id in a.labels
-        ]
+
+        result = []
+
+        for a in self.annotations:      
+            # TODO: 完成以下缺失的部份
+            # 請判斷既有標註是否與使用者選取的範圍 (start, end) 有重疊？
+            # 如果有重疊，請將 is_overlapping 設為 True；否則為 False。
+
+            is_overlapping = False  # <--- 請修改這行的邏輯
+
+            # ==========================================================
+
+            has_group = (group_id in a.labels)
+
+            if is_overlapping and has_group:
+                result.append(a)
+
+        # 把收集到的所有衝突標註回傳出去
+        return result
+         
 
     def sorted_annotations(self) -> list[Annotation]:
         return sorted(self.annotations, key=lambda a: (a.start, a.end))
