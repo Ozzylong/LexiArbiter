@@ -278,31 +278,35 @@ self.concept_panel.refresh(self.doc)   # 有改到概念時才需要
 
 ```
 按右鍵 → AnnotationEditor._on_context_menu(pos)          （pos 是右鍵點擊的位置）
-           └─ 呼叫 self.cursorForPosition(pos) → 再呼叫 self._omap.to_storage(...) → 點擊位置在原文中的位置
+           └─ 呼叫 self.cursorForPosition(pos) → 右鍵位置的游標 cursor
+           └─ 沒有選取 → 呼叫 self.setTextCursor(cursor)，把文字游標移到右鍵位置（有選取時不動，以免清掉反白）
+           └─ 呼叫 self._omap.to_storage(cursor.position()) → 點擊位置在原文中的位置
+           └─ 呼叫 self.storage_selection() → (sel_start, sel_end)
            └─ 呼叫 self._doc.annotations_at(位置) → 這個位置上的標註 list
                  有標註 → 取最後一筆的 id 當 ann_id；沒有 → ann_id = None
-           └─ 呼叫 self.storage_selection() → (sel_start, sel_end)
            → MainWindow._build_context_menu(menu, ann_id, sel_start, sel_end)   ← 三個值都以參數傳進來
-                 └─ 呼叫 self.doc.find_annotation(ann_id) → Annotation 物件（用來顯示它的標籤名稱）
+                 └─ 沒選取、也沒點在標註上 → 只加一個灰色提示「請先反白文字再標註」，然後 return
+                 └─ 呼叫 self.doc.find_annotation(ann_id) → Annotation 物件（用來顯示它的標籤名稱，以及略過它已經套用的標籤）
                  （依序把選單項目加進 menu，見下表）
            → menu 有項目 → menu.exec(...) 顯示選單
 ```
 
 - 在 `_build_context_menu` 裡，**直接用參數**就好：右鍵點到的標註用 `ann_id`，選取範圍用 `sel_start`、`sel_end`，不需要再呼叫 `storage_selection()`。
-- 想拿到「右鍵點到的那筆標註」物件：`ann = self.doc.find_annotation(ann_id)`（先確認 `ann_id` 不是 `None`）。
+- 想拿到「右鍵點到的那筆標註」物件：函式裡已經有 `ann = self.doc.find_annotation(ann_id) if ann_id is not None else None`，可以直接用。但它定義在「提示後 return」和「複製選取文字」之後，如果你的程式碼要加在更前面，就要自己再取一次。
 
 `_build_context_menu` 目前產生的項目，以及按下後呼叫的函式：
 
 | 選單項目 | 什麼時候出現 | 按下後呼叫 |
 |---|---|---|
+| （灰色）請先反白文字再標註 | 沒有選取、也沒點在標註上時（這時選單只有這一項） | 無 |
 | 複製選取文字 | `sel_end > sel_start`（有選取）時 | `self.editor.copy()` |
 | （灰色）該標註的標籤名稱 | `ann_id` 不是 `None` 時 | 無 |
-| 各標籤（例如「專業術語」） | 一律 | `apply_label(group_id, label_id)` → 見 1-6 |
-| 刪除此處標註 | 一律（沒有選取、也沒點在標註上時是灰色的） | `action_remove_annotation_at_cursor()` → 見 1-10 |
+| 各標籤（例如「專業術語」） | 有選取，或點在標註上時；**沒有選取時，略過該標註已經套用的標籤**（再套一次不會有任何變化）。模板只有一個標籤，所以沒反白、在已標註文字上右鍵時不會出現「專業術語」 | `apply_label(group_id, label_id)` → 見 1-6 |
+| 刪除此處標註 | 有選取，或點在標註上時 | `action_remove_annotation_at_cursor()` → 見 1-10 |
 
-> ⚠️ 選單項目按下後呼叫的 `apply_label`、`action_remove_annotation_at_cursor`，**不會**收到 `ann_id`。它們是自己呼叫 `annotation_at_cursor()` 去找「文字游標」所在的標註，這不一定是右鍵點到的那一個。如果你新增的項目要針對「右鍵點到的標註」做事，請把 `ann` 直接傳給你的函式（寫法見 2-1）。
+> ⚠️ 選單項目按下後呼叫的 `apply_label`、`action_remove_annotation_at_cursor`，**不會**收到 `ann_id`，而是自己呼叫 `annotation_at_cursor()` 去找「文字游標」所在的標註。沒有選取時，右鍵已經先把文字游標移到點擊處，所以找到的就是右鍵點到的那一個；**有選取時文字游標不會動**，這兩個函式會改以選取範圍為準。如果你新增的項目要針對「右鍵點到的標註」做事，還是建議把 `ann` 直接傳給你的函式（寫法見 2-1）。
 
-- 想讓右鍵在某些情況下什麼都不顯示：在 `_build_context_menu` 開頭直接 `return`，選單沒有任何項目就不會跳出來。
+- 想讓右鍵在某些情況下不顯示某些項目：在 `_build_context_menu` 裡加條件後直接 `return`。目前開頭的「請先反白文字再標註」就是這種寫法；如果 `return` 時選單沒有任何項目，選單就不會跳出來。
 
 ---
 
@@ -449,7 +453,7 @@ def _on_annotation_clicked(self, ann_id: str):
 
 **產生位置：** `MainWindow._build_context_menu(menu, ann_id, sel_start, sel_end)`
 
-**在這個函式裡加：**
+**在這個函式裡加**（函式中已經有 `ann` 可以直接用，第一行只有在你把程式碼加在它前面時才需要）：
 
 ```python
 ann = self.doc.find_annotation(ann_id) if ann_id else None
