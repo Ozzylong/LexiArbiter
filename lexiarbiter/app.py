@@ -171,6 +171,8 @@ class MainWindow(QMainWindow):
         self.setStatusBar(self.status)
         self.status_mode_label = QLabel()
         self.status.addPermanentWidget(self.status_mode_label)
+        # 模板只有一個標註模式，不顯示模式名稱
+        self.status_mode_label.setVisible(False)
 
     def _build_menu(self):
         mb = self.menuBar()
@@ -251,6 +253,8 @@ class MainWindow(QMainWindow):
         act_open_modes_dir = QAction("開啟模式資料夾", self)
         act_open_modes_dir.triggered.connect(self._open_modes_dir)
         m_mode.addAction(act_open_modes_dir)
+        # 模板只有一個標註模式，隱藏整個選單（切換模式的邏輯仍保留）
+        m_mode.menuAction().setVisible(False)
 
         # Help
         m_help = mb.addMenu("說明(&H)")
@@ -268,18 +272,13 @@ class MainWindow(QMainWindow):
     def _populate_annotate_menu(self):
         self.menu_annotate.clear()
         for g in self.mode.groups:
-            sub = self.menu_annotate.addMenu(g.name)
             for lb in g.labels:
                 act = QAction(_swatch_icon(lb.color), lb.name, self)
                 shortcut = self.prefs.label_shortcut(g.id, lb.id, lb.shortcut)
                 if shortcut:
                     act.setShortcut(shortcut)
                 act.triggered.connect(self._make_label_handler(g.id, lb.id))
-                sub.addAction(act)
-            sub.addSeparator()
-            act_clear = QAction(f"清除「{g.name}」於選取段", self)
-            act_clear.triggered.connect(self._make_clear_group_handler(g.id))
-            sub.addAction(act_clear)
+                self.menu_annotate.addAction(act)
 
     def _build_toolbar(self):
         tb = QToolBar("標註工具列", self)
@@ -316,8 +315,6 @@ class MainWindow(QMainWindow):
 
         for g in self.mode.groups:
             self._label_button_actions.append(self.toolbar.addSeparator())
-            grp_label = QLabel(f"  {g.name}：")
-            self._label_button_actions.append(self.toolbar.addWidget(grp_label))
             for lb in g.labels:
                 btn = QPushButton(lb.name)
                 btn.setCursor(Qt.PointingHandCursor)
@@ -355,11 +352,6 @@ class MainWindow(QMainWindow):
     def _make_label_handler(self, group_id: str, label_id: str):
         def handler(*_):
             self.apply_label(group_id, label_id)
-        return handler
-
-    def _make_clear_group_handler(self, group_id: str):
-        def handler(*_):
-            self.clear_group_in_selection(group_id)
         return handler
 
     def _confirm_replace_existing_group_label(
@@ -497,30 +489,6 @@ class MainWindow(QMainWindow):
         except Exception:
             log.error("apply_label 發生例外 group=%s label=%s", group_id, label_id, exc_info=True)
             QMessageBox.critical(self, "標註錯誤", "套用標籤時發生錯誤，請查看 logs/lexiarbiter.log。")
-
-    def clear_group_in_selection(self, group_id: str):
-        if self.doc is None:
-            return
-        s, e = self.editor.storage_selection()
-        if e <= s:
-            ann_id = self.editor.annotation_at_cursor()
-            if ann_id is None:
-                return
-            ann = self.doc.find_annotation(ann_id)
-            if ann is None:
-                return
-            ann.labels.pop(group_id, None)
-            if not ann.labels:
-                self.doc.remove_annotation(ann.id)
-        else:
-            for a in list(self.doc.annotations_in_range(s, e)):
-                a.labels.pop(group_id, None)
-                if not a.labels:
-                    self.doc.remove_annotation(a.id)
-        self.doc.dirty = True
-        self.editor.refresh_highlights()
-        self._refresh_status()
-        self._update_window_title()
 
     def action_remove_annotation_at_cursor(self):
         if self.doc is None:
@@ -931,24 +899,19 @@ class MainWindow(QMainWindow):
                     if lid:
                         lb = g.label(lid)
                         if lb:
-                            lbl_lines.append(f"{g.name}：{lb.name}")
+                            lbl_lines.append(lb.name)
                 head = QAction("　|　".join(lbl_lines) if lbl_lines else "(無標籤)", menu)
                 head.setEnabled(False)
                 menu.addAction(head)
                 menu.addSeparator()
 
         for g in self.mode.groups:
-            sub = menu.addMenu(g.name)
             for lb in g.labels:
                 shortcut = self.prefs.label_shortcut(g.id, lb.id, lb.shortcut)
                 text = lb.name + (f"\t{shortcut}" if shortcut else "")
-                act = QAction(_swatch_icon(lb.color), text, sub)
+                act = QAction(_swatch_icon(lb.color), text, menu)
                 act.triggered.connect(self._make_label_handler(g.id, lb.id))
-                sub.addAction(act)
-            sub.addSeparator()
-            act_clear = QAction(f"清除「{g.name}」", sub)
-            act_clear.triggered.connect(self._make_clear_group_handler(g.id))
-            sub.addAction(act_clear)
+                menu.addAction(act)
 
         menu.addSeparator()
         act_remove = QAction("刪除此處標註", menu)
