@@ -301,6 +301,10 @@ class AnnotationEditor(QTextEdit):
         d_pos = cursor.position()
         if self._omap is None:
             return
+        # 沒有反白時把文字游標移到右鍵位置，讓「改標籤／刪除此處標註」作用在右鍵處；
+        # 有反白時不動，避免清掉使用者的選取。
+        if not self.textCursor().hasSelection():
+            self.setTextCursor(cursor)
         storage_pos = self._omap.to_storage(d_pos)
         sel_start, sel_end = self.storage_selection()
         ann_id = None

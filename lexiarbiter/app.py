@@ -881,6 +881,13 @@ class MainWindow(QMainWindow):
             return
         has_selection = sel_end > sel_start
 
+        # 沒有反白、右鍵處也沒有既有標註時，標籤點了也沒效果，只顯示提示
+        if not has_selection and ann_id is None:
+            hint = QAction("請先反白文字再標註", menu)
+            hint.setEnabled(False)
+            menu.addAction(hint)
+            return
+
         # 如果有選取文字，在選單最上方加入「複製」選項
         if has_selection:
             act_copy = QAction("複製選取文字", menu)
@@ -890,23 +897,25 @@ class MainWindow(QMainWindow):
             menu.addSeparator()
 
         # If hovering over an annotation, show its info.
-        if ann_id is not None:
-            ann = self.doc.find_annotation(ann_id)
-            if ann is not None:
-                lbl_lines = []
-                for g in self.mode.groups:
-                    lid = ann.labels.get(g.id)
-                    if lid:
-                        lb = g.label(lid)
-                        if lb:
-                            lbl_lines.append(lb.name)
-                head = QAction("　|　".join(lbl_lines) if lbl_lines else "(無標籤)", menu)
-                head.setEnabled(False)
-                menu.addAction(head)
-                menu.addSeparator()
+        ann = self.doc.find_annotation(ann_id) if ann_id is not None else None
+        if ann is not None:
+            lbl_lines = []
+            for g in self.mode.groups:
+                lid = ann.labels.get(g.id)
+                if lid:
+                    lb = g.label(lid)
+                    if lb:
+                        lbl_lines.append(lb.name)
+            head = QAction("　|　".join(lbl_lines) if lbl_lines else "(無標籤)", menu)
+            head.setEnabled(False)
+            menu.addAction(head)
+            menu.addSeparator()
 
         for g in self.mode.groups:
             for lb in g.labels:
+                # 未反白時只能改右鍵處的標註；已套用的同一個標籤再套一次不會有任何變化
+                if not has_selection and ann is not None and ann.labels.get(g.id) == lb.id:
+                    continue
                 shortcut = self.prefs.label_shortcut(g.id, lb.id, lb.shortcut)
                 text = lb.name + (f"\t{shortcut}" if shortcut else "")
                 act = QAction(_swatch_icon(lb.color), text, menu)
@@ -916,8 +925,6 @@ class MainWindow(QMainWindow):
         menu.addSeparator()
         act_remove = QAction("刪除此處標註", menu)
         act_remove.triggered.connect(self.action_remove_annotation_at_cursor)
-        if not has_selection and ann_id is None:
-            act_remove.setEnabled(False)
         menu.addAction(act_remove)
 
     # ----------------------------------------------- 反白後自動跳出快速選單
