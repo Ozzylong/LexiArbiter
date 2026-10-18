@@ -17,12 +17,12 @@ from typing import Optional
 
 log = logging.getLogger(__name__)
 
-from PySide6.QtCore import Qt, QPoint, Signal
+from PySide6.QtCore import Qt, QEvent, QPoint, Signal
 from PySide6.QtGui import (
     QAction, QColor, QGuiApplication, QKeySequence, QShortcut, QTextCharFormat,
     QTextCursor, QFont, QPalette,
 )
-from PySide6.QtWidgets import QMenu, QTextEdit
+from PySide6.QtWidgets import QMenu, QTextEdit, QToolTip
 
 from ..core.config import AnnotationMode, UserPreferences, default_ui_font
 from ..core.models import Annotation, Document
@@ -130,6 +130,8 @@ class AnnotationEditor(QTextEdit):
         self._context_menu_builder = None
         # 追蹤是不是「正在拖左鍵」；右鍵 / 中鍵 / 鍵盤選取都不應觸發 popup。
         self._left_drag_active: bool = False
+        # 目前 tooltip 顯示的是哪些標註；滑鼠移動時用來判斷是否離開、要不要收起。
+        self._tooltip_ann_ids: tuple[str, ...] = ()
 
         # 系統深 / 淺色主題切換時自動重繪。Qt 6.5+ 才有此 signal，
         # 舊版直接 fallback 到「重啟程式才生效」。
@@ -250,7 +252,6 @@ class AnnotationEditor(QTextEdit):
         bg_color: Optional[QColor] = None
         underline_style = QTextCharFormat.NoUnderline
         underline_color: Optional[QColor] = None
-        tooltip_parts: list[str] = []
 
         for g in self._mode.groups:
             lid = ann.labels.get(g.id)
@@ -259,7 +260,6 @@ class AnnotationEditor(QTextEdit):
             lb = g.label(lid)
             if lb is None:
                 continue
-            tooltip_parts.append(f"{g.name}：{lb.name}")
             color = _hex_to_qcolor(lb.color, alpha=bg_alpha)
             if color is not None and bg_color is None:
                 bg_color = color
@@ -288,8 +288,90 @@ class AnnotationEditor(QTextEdit):
             fmt.setUnderlineStyle(underline_style)
             if underline_color is not None:
                 fmt.setUnderlineColor(underline_color)
-        if tooltip_parts:
-            fmt.setToolTip("　|　".join(tooltip_parts))
+
+    # ---------------------------------------------------------------- tooltip
+
+    def _tooltip_text(self, ann: Annotation) -> str:
+        """標註的 tooltip 內容：「群組：標籤」，多群組以全形分隔。"""
+        if self._mode is None:
+            return ""
+        parts: list[str] = []
+        for g in self._mode.groups:
+            lid = ann.labels.get(g.id)
+            if not lid:
+                continue
+            lb = g.label(lid)
+            if lb is None:
+                continue
+            parts.append(f"{g.name}：{lb.name}")
+        return "　|　".join(parts)
+
+    def _display_pos_under_mouse(self, pos: QPoint) -> Optional[int]:
+        """滑鼠（viewport 座標）正下方那個字的 display offset；不在字上則回 None。
+
+        cursorForPosition 回傳的是「最近的字元邊界」，滑到某字右半邊會得到下一個位置，
+        所以要依游標矩形判斷滑鼠實際落在邊界左邊還是右邊那個字。
+        """
+        cur = self.cursorForPosition(pos)
+        rect = self.cursorRect(cur)
+        # 垂直方向離該行太遠（例如文末下方空白處）就不算停在字上。
+        slack = rect.height() // 2
+        if pos.y() < rect.top() - slack or pos.y() > rect.bottom() + slack:
+            return None
+        if pos.x() < rect.x():
+            if cur.atBlockStart():
+                return None
+            return cur.position() - 1
+        if cur.atBlockEnd():
+            return None  # 行尾右側的空白
+        return cur.position()
+
+    def _annotations_under_mouse(self, pos: QPoint) -> list[Annotation]:
+        if self._doc is None or self._omap is None:
+            return []
+        d_pos = self._display_pos_under_mouse(pos)
+        if d_pos is None:
+            return []
+        return self._doc.annotations_at(self._omap.to_storage(d_pos))
+
+    def _tooltip_for(self, anns: list[Annotation]) -> str:
+        """重疊的標註各佔一行。"""
+        return "\n".join(t for t in (self._tooltip_text(a) for a in anns) if t)
+
+    def viewportEvent(self, ev):
+        # ExtraSelection 的 format 只負責繪製，QTextEdit 也不會自動顯示 char format 的
+        # tooltip，所以停留提示要自己處理。
+        if ev.type() == QEvent.ToolTip:
+            anns = self._annotations_under_mouse(ev.pos())
+            text = self._tooltip_for(anns)
+            if text:
+                QToolTip.showText(ev.globalPos(), text, self.viewport())
+                self._tooltip_ann_ids = tuple(a.id for a in anns)
+            else:
+                QToolTip.hideText()
+                self._tooltip_ann_ids = ()
+                ev.ignore()
+            return True
+        return super().viewportEvent(ev)
+
+    def mouseMoveEvent(self, ev):
+        super().mouseMoveEvent(ev)
+        # QEvent.ToolTip 只在滑鼠停住時才發生，移動中要自己判斷是否已離開標註，
+        # 否則提示會一直掛到滑鼠離開整個編輯區或逾時。
+        if not self._tooltip_ann_ids or not QToolTip.isVisible():
+            return
+        anns = self._annotations_under_mouse(ev.position().toPoint())
+        ids = tuple(a.id for a in anns)
+        if ids == self._tooltip_ann_ids:
+            return
+        text = self._tooltip_for(anns)
+        if text:
+            # 直接滑進另一個標註：立即換內容，不必再等停留
+            QToolTip.showText(ev.globalPosition().toPoint(), text, self.viewport())
+            self._tooltip_ann_ids = ids
+        else:
+            QToolTip.hideText()
+            self._tooltip_ann_ids = ()
 
     # ----------------------------------------------------------- context menu
 
