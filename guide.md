@@ -25,6 +25,8 @@
 | `concept_id` | 綁定概念的 id | `self.doc.concepts` 中的某個 key |
 | `broader_concept_id` | 上位概念的 id | `self.doc.concepts` 中的某個 key |
 
+> 解釋段落是**術語那條標註的欄位**（`explanation_start/end`），不是另一條標註。存檔裡不應該出現只代表解釋的 `Annotation`。
+
 `Document.concepts`（同一個檔案）是整份文件共用的概念清單，格式為 `{概念id: 概念名稱}`。
 新概念的 id 請沿用現有寫法：`"C_" + uuid.uuid4().hex[:8]`。
 
@@ -628,6 +630,7 @@ self.concept_panel.refresh(self.doc)   # 有改到概念時才需要
 
 > ⚠️ 新增的 label 按下去一樣會呼叫 `apply_label`：會跳概念對話框、經過重疊檢查（和既有標註不能重疊，見 1-6），最後寫進 `labels`。
 > 如果加這個 label 只是想要一顆「解釋」之類的按鈕，請在 `apply_label` 最前面判斷 `label_id`，改呼叫你自己的函式後直接 `return`；或改用 2-2 / 2-4 的一般按鈕。
+> 另外新增一個 group 雖然可以避開重疊檢查（重疊檢查只看同群組），但按下去產生的仍然是**另一條獨立的標註**：不會寫進術語的 `explanation_start/end`，匯出 .txt 時也會被切成新的段落。
 
 ---
 
@@ -762,6 +765,8 @@ get_result() → (既有id, None) / (None, 新名稱) / (None, None)    ← 只�
 ## 驗收清單
 - [ ] `annotations_in_range_for_group` 的 TODO 已完成
 - [ ] 新建的標註：`doc.text[start:end]` 是術語，`doc.text[explanation_start:explanation_end]` 是解釋
+- [ ] 每條標註的 `labels` 都是 `{"entity": "term"}`，沒有另外代表解釋的標註
+- [ ] 加了解釋之後匯出的 .txt，和只標術語時完全一樣
 - [ ] 用判決 JSON（含換行）測試，範圍仍然正確
 - [ ] `concept_id`、`broader_concept_id` 都存在於 `doc.concepts`；選擇既有概念時不會重複建立
 - [ ] 存檔、關閉、重新開啟後，資料一致
