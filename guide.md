@@ -1,7 +1,8 @@
 # 術語—解釋標註功能 實作指南
 
-這份指南分成兩個部分：
+這份指南分成三個部分：
 
+- **第零部分：GUI 程式的基本邏輯**：GUI 程式和一般 Python script 跑法不一樣。沒寫過 GUI 的話請先讀這部分，後面的流程圖才看得懂。
 - **第一部分：程式運作對照**：你在程式裡做的每個操作（選文字、按按鈕、按右鍵…），各自對應到哪些函式、呼叫了什麼、回傳了什麼。想改某個操作的行為時，要去改哪裡。
 - **第二部分：GUI 元件怎麼產生、怎麼加**：如果想在右鍵選單或工具列多加一個按鈕、擴充概念對話框，要去哪個函式、加什麼程式碼。
 
@@ -48,6 +49,124 @@
 
 ---
 
+# 第零部分：GUI 程式的基本邏輯
+
+## 0-1. 一般程式 vs GUI 程式
+
+你平常寫的 Python script 是**從第一行跑到最後一行，跑完就結束**。
+
+GUI 程式不一樣：它先把畫面「蓋好」，然後進入一個叫 **event loop** 的迴圈，**一直等**，直到你關閉視窗為止。等待的過程中，只要使用者做了某個動作（按按鈕、拖選文字、按右鍵），程式才會去執行對應的函式，執行完又回去繼續等。
+
+可以想像成餐廳的服務生：開店時先把桌椅擺好（蓋畫面），然後就站在旁邊等；客人舉手（事件），服務生才過去處理，處理完再回去等下一位。
+
+這個 template 的時間軸長這樣：
+
+```
+main.py 啟動
+  → MainWindow.__init__()      蓋畫面：建立按鈕、選單、編輯器，並「登記」每個事件發生時要呼叫哪個函式
+  → app.exec()                 進入 event loop，開始等（在 main.py 裡）
+       ├─ 使用者按「開啟檔案」  → Qt 自動呼叫 MainWindow.action_open()   → 回去繼續等
+       ├─ 使用者拖選文字        → Qt 自動呼叫對應的函式（見 1-2）        → 回去繼續等
+       ├─ ……
+       └─ 使用者關閉視窗        → 離開 event loop，程式結束
+```
+
+所以在 GUI 程式裡，**你寫的函式大多不是由你自己呼叫的**，而是「事先登記好，等事件發生時由 Qt 幫你呼叫」。
+
+---
+
+## 0-2. 三個角色：元件、signal、處理函式
+
+| 角色 | 是什麼 | template 裡的例子 |
+|---|---|---|
+| 元件（widget） | 畫面上看得到的東西 | 工具列按鈕、編輯器 `self.editor`、右側檔案清單 `self.file_panel` |
+| signal（事件） | 元件「發生某件事」時發出的通知 | `triggered`（按下工具列 / 選單項目）、`clicked`（按下 `QPushButton`）、`selection_changed`（選取範圍改變） |
+| 處理函式（slot） | 事件發生時要執行的函式 | `MainWindow.action_open` |
+
+把這三者串起來的就是 `connect`：
+
+```python
+元件.signal.connect(處理函式)
+```
+
+意思是「**登記**：當這個元件發生這件事時，請呼叫這個函式」。登記的當下，函式**不會**執行。
+
+---
+
+## 0-3. Show case：拆解「開啟檔案」按鈕，再自己做一個
+
+**先看現有的程式碼。** 在 `MainWindow._build_toolbar` 裡，「開啟檔案」按鈕只有兩行：
+
+```python
+a_open = tb.addAction(_swatch_icon("#FFFFFF"), "開啟檔案")   # ① 建立元件：在工具列 tb 上加一個按鈕
+a_open.triggered.connect(self.action_open)                  # ② 登記：按下（triggered）時呼叫 action_open
+```
+
+③ 處理函式 `MainWindow.action_open` 定義在 `MainWindow` 的其他地方。程式啟動時它**不會**跑；之後**每按一次按鈕，Qt 就呼叫它一次**。
+
+```
+程式啟動時（只跑一次）：
+MainWindow.__init__ → _build_toolbar
+   ├─ ① 建立「開啟檔案」按鈕
+   └─ ② a_open.triggered.connect(self.action_open)
+
+之後每次使用者按下按鈕：
+按鈕 ⇢ emit triggered
+     ⇢ 接到 MainWindow.action_open()     ← ③ 跳出選擇檔案的視窗
+```
+
+**照樣做一個自己的按鈕。** 以下示範加一個「選取字數」按鈕，按下後在狀態列顯示目前選了幾個字（只用到第一部分會介紹的 `storage_selection()` 和 `status.showMessage()`，可以先照抄）：
+
+```python
+# ① ② 加在 MainWindow._build_toolbar 裡，「開啟檔案」那幾行的旁邊
+a_count = tb.addAction(_swatch_icon("#FFFFFF"), "選取字數")
+a_count.triggered.connect(self.show_selection_length)
+
+# ③ 在 MainWindow 類別裡新增這個函式
+def show_selection_length(self):
+    if self.doc is None:                                   # 還沒開檔就按，先擋掉
+        self.status.showMessage("請先開啟檔案", 3000)
+        return
+    s, e = self.editor.storage_selection()                 # 取得選取範圍（見 1-2）
+    self.status.showMessage(f"目前選取 {e - s} 字", 3000)  # 在狀態列顯示 3 秒
+```
+
+> 這只是練習用的範例，template 裡沒有這個按鈕。想加任何 GUI 元件都是同樣三步：**① 建立元件 → ② connect 到函式 → ③ 寫出那個函式**。第二部分的每一節，都只是在告訴你 ① 要寫在哪裡、用什麼元件。
+
+---
+
+## 0-4. 常見錯誤
+
+- **connect 時多加了括號**
+
+  ```python
+  a_count.triggered.connect(self.show_selection_length)     # ✓ 把「函式本身」交給 Qt，等按下時再呼叫
+  a_count.triggered.connect(self.show_selection_length())   # ✗ 加了括號 = 現在就呼叫，
+                                                            #   把回傳值（None）拿去登記，之後按了沒反應或報錯
+  ```
+
+- **想在呼叫時多帶參數**：`connect` 只能接「函式本身」，要帶參數就用 `lambda` 包一層，寫法見 2-1。
+- **不要假設使用者一定照順序操作**：處理函式可能在任何時候被呼叫（例如還沒開檔就按按鈕），開頭先檢查狀態，像上面範例的 `if self.doc is None:`。
+
+---
+
+## 0-5. 用這個角度看整個 template
+
+事件不一定是「按按鈕」。下面是 `MainWindow.__init__` 裡實際的幾條接線：
+
+| 誰發出 | signal | 接到 | 說明 |
+|---|---|---|---|
+| 工具列「開啟檔案」 | `triggered` | `action_open` | 使用者按下按鈕 |
+| `self.editor` | `selection_changed(s, e)` | `_on_selection_changed` | 選取範圍改變，順便把範圍 `s, e` 當參數傳過來 |
+| `self.file_panel` | `file_open_requested(path)` | `_handle_file_open_requested` | 在檔案清單點兩下，把檔案路徑傳過來 |
+| `self._autosave_timer`（計時器） | `timeout` | `_autosave_tick` | 每 60 秒自動觸發一次，**不需要使用者做任何事** |
+
+除了 `connect`，還有第二種接事件的方式：**覆寫事件函式**。像 `AnnotationEditor.mouseReleaseEvent` 這種名字固定的函式，Qt 會在「放開滑鼠」時自動呼叫它。template 在這個函式裡判斷完狀況後，再 `emit` 自己定義的 signal（例如 `selection_finished`）通知 `MainWindow`，`MainWindow` 那邊再用 `connect` 接起來（見 1-2；1-8 會帶你自己接一條）。
+
+**第一部分的每一張流程圖，其實都在回答同一個問題：「哪個事件發生了 → 它被 connect 到哪個函式 → 那個函式做了什麼」。** 想加新功能，就是「挑一個事件 → connect 到你寫的函式」。
+
+---
+
 # 第一部分：程式運作對照
 
 ## 怎麼讀這一部分
@@ -69,6 +188,8 @@ A
 ⇢ emit 某signal(參數)         透過 signal 把參數送出去
 ⇢ 接到 某函式(參數)            這個 signal 在 MainWindow.__init__ 裡被 connect 到某個函式，所以那個函式會被呼叫
 ```
+
+> 不熟 signal、`emit`、`connect` 的話，請先看第零部分。
 
 ---
 
@@ -493,6 +614,8 @@ act.setShortcut("Ctrl+K")                # 只顯示快捷鍵提示（真正的�
 ## 2-2. 在工具列加一個按鈕
 
 **產生位置：** `MainWindow._build_toolbar`（一般按鈕），以及 `MainWindow._populate_label_buttons`（標籤按鈕）
+
+> 按鈕為什麼按了會呼叫你的函式，見第零部分；0-3 有一個從頭到尾的完整按鈕範例。
 
 一般按鈕（兩種模式下都會出現）：在 `_build_toolbar` 裡，仿照「開啟檔案」那幾行加：
 
