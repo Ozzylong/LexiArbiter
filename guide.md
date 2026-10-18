@@ -700,11 +700,11 @@ get_result() → (既有id, None) / (None, 新名稱) / (None, None)    ← 只�
 
 想讓「點擊概念」有反應，**照抄 `widgets/file_panel.py` → `FilePanel`**。它是同一個模式的完整範例：點清單項目 → 發出帶資料的 signal → `MainWindow` 接起來。
 
-| 要做的事 | `FilePanel` 裡對應的地方 |
-|---|---|
-| 讓每個項目記住自己的 id | `refresh` 裡用 `QListWidgetItem` 建立項目，再用 `setData(Qt.UserRole, ...)` 存資料 |
-| 點擊時取出 id、發出 signal | `__init__` 把清單的 signal 接到 `_on_item_activated`，它用 `item.data(Qt.UserRole)` 取出資料後 `emit` |
-| 在 `MainWindow` 接到你的函式 | `MainWindow.__init__` 裡 `self.file_panel.file_open_requested.connect(...)` 那行 |
+| 要做的事                  | `FilePanel` 裡對應的地方                                                                      |
+| --------------------- | --------------------------------------------------------------------------------------- |
+| 讓每個項目記住自己的 id         | `refresh` 裡用 `QListWidgetItem` 建立項目，再用 `setData(Qt.UserRole, ...)` 存資料                  |
+| 點擊時取出 id、發出 signal    | `__init__` 把清單的 signal 接到 `_on_item_activated`，它用 `item.data(Qt.UserRole)` 取出資料後 `emit` |
+| 在 `MainWindow` 接到你的函式 | `MainWindow.__init__` 裡 `self.file_panel.file_open_requested.connect(...)` 那行           |
 
 - `FilePanel` 接的是 `itemActivated`（雙擊或按 Enter 才觸發）；想要單擊就有反應，改用 `itemClicked`（`ConceptSelectionDialog` 裡有用到）。
 - 記得在 `concept_panel.py` 開頭 import `QListWidgetItem`。
@@ -763,6 +763,16 @@ get_result() → (既有id, None) / (None, 新名稱) / (None, None)    ← 只�
 - 檢查資料：存成 `.lexa` 後用文字編輯器打開，看看欄位是否正確。
 
 ## 驗收清單
+
+交作業前，先在專案根目錄跑自我檢查（用法與結果怎麼看，見 `CHANGELOG.md`「四、新增」）：
+
+```bash
+python tests/check_code.py
+python tests/check_lexa.py 你的檔案.lexa --task tests/tasks/範例任務.json
+```
+
+這兩支只能檢查程式碼和存出來的資料，**和 GUI 操作有關的項目（兩種模式都能標註、點擊看概念、中途取消）仍然要自己實際操作確認**。
+
 - [ ] `annotations_in_range_for_group` 的 TODO 已完成
 - [ ] 新建的標註：`doc.text[start:end]` 是術語，`doc.text[explanation_start:explanation_end]` 是解釋
 - [ ] 每條標註的 `labels` 都是 `{"entity": "term"}`，沒有另外代表解釋的標註
