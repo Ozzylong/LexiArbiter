@@ -1,0 +1,95 @@
+{
+  "document": "民法債編總論_純文字_簡易測資.docx",
+  "text_length": 1209,
+  "text_sha1": "748a4759e66d05089c51bbf1250d79d0bed58264",
+  "items": [
+    {
+      "term": "債之發生原因",
+      "term_occurrence": 3,
+      "explanation": "大致區分為意定之債和法定之債。意定之債主要指依法律關係形成之契約，其機能在於契約自由與契約正義。而法定之債分為無因管理、不當得利、與侵權行為。無因管理之機能在於調和「干涉他人私領域」與「獎勵人類互助行為」兩者；不當得利之機能在於調整不當財貨變動；侵權行為之機能在於調和「被害人權益保護」與「行為人行為自由」。",
+      "explanation_occurrence": 1,
+      "concept": "債之發生原因",
+      "broader_concept": "債之發生原因"
+    },
+    {
+      "term": "意定之債",
+      "term_occurrence": 1,
+      "explanation": "意定之債",
+      "explanation_occurrence": 1,
+      "concept": "意定之債",
+      "broader_concept": "債之發生原因"
+    },
+    {
+      "term": "法定之債",
+      "term_occurrence": 1,
+      "explanation": "法定之債",
+      "explanation_occurrence": 1,
+      "concept": "法定之債",
+      "broader_concept": "債之發生原因"
+    },
+    {
+      "term": "意定之債",
+      "term_occurrence": 2,
+      "explanation": "主要指依法律關係形成之契約，其機能在於契約自由與契約正義。",
+      "explanation_occurrence": 1,
+      "concept": "意定之債",
+      "broader_concept": "債之發生原因"
+    },
+    {
+      "term": "法定之債",
+      "term_occurrence": 2,
+      "explanation": "分為無因管理、不當得利、與侵權行為。",
+      "explanation_occurrence": 1,
+      "concept": "法定之債",
+      "broader_concept": "債之發生原因"
+    },
+    {
+      "term": "無因管理",
+      "term_occurrence": 1,
+      "explanation": "無因管理",
+      "explanation_occurrence": 1,
+      "concept": "無因管理",
+      "broader_concept": "法定之債"
+    },
+    {
+      "term": "不當得利",
+      "term_occurrence": 1,
+      "explanation": "不當得利",
+      "explanation_occurrence": 1,
+      "concept": "不當得利",
+      "broader_concept": "法定之債"
+    },
+    {
+      "term": "侵權行為",
+      "term_occurrence": 1,
+      "explanation": "侵權行為",
+      "explanation_occurrence": 1,
+      "concept": "侵權行為",
+      "broader_concept": "法定之債"
+    },
+    {
+      "term": "無因管理",
+      "term_occurrence": 2,
+      "explanation": "無因管理之機能在於調和「干涉他人私領域」與「獎勵人類互助行為」兩者；",
+      "explanation_occurrence": 1,
+      "concept": "無因管理",
+      "broader_concept": "法定之債"
+    },
+    {
+      "term": "不當得利",
+      "term_occurrence": 2,
+      "explanation": "不當得利之機能在於調整不當財貨變動",
+      "explanation_occurrence": 1,
+      "concept": "不當得利",
+      "broader_concept": "法定之債"
+    },
+    {
+      "term": "侵權行為",
+      "term_occurrence": 2,
+      "explanation": "侵權行為之機能在於調和「被害人權益保護」與「行為人行為自由」。",
+      "explanation_occurrence": 1,
+      "concept": "侵權行為",
+      "broader_concept": "法定之債"
+    }
+  ]
+}

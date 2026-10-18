@@ -1,8 +1,8 @@
 """依任務單產生答案 .lexa（出題用）。
 
 用法（在專案根目錄）：
-    python tests/make_answer.py tests/tasks/範例任務.json documents/民法債編總論_純文字.docx
-    python tests/make_answer.py --find 債權人 documents/民法債編總論_純文字.docx   ← 列出某段文字每次出現的位置
+    python tests/make_answer.py tests/tasks/民法債編總論_純文字_簡易測資.json documents/民法債編總論_純文字_簡易測資.docx
+    python tests/make_answer.py --find 無因管理 documents/民法債編總論_純文字_簡易測資.docx   ← 列出某段文字每次出現的位置
 
 會做三件事：
 1. 用 io.load_docx 讀 .docx，依任務單的「文字 + 第幾次出現」算出 offset

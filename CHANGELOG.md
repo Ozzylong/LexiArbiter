@@ -134,10 +134,11 @@ v1.0 在 `_apply_format_for_labels` 裡用 `fmt.setToolTip(...)` 設定提示，
   ```bash
   python tests/check_code.py                         # 檢查 models.py 的 TODO 與 io.py 的匯出
   python tests/check_lexa.py 你的檔案.lexa            # 檢查存出來的 .lexa 格式
-  python tests/check_lexa.py 你的檔案.lexa --task tests/tasks/範例任務.json   # 再和任務單比對
+  python tests/check_lexa.py 你的檔案.lexa --task tests/tasks/民法債編總論_純文字_簡易測資.json   # 再和任務單比對
   ```
 
   - 結果分成 `PASS`、`WARN`（例如範圍只多選或少選了頭尾的空白、標點）、`FAIL`。
   - 和任務單比對時，用文字內容和概念**名稱**比對，`id`、`concept_id` 這些亂數欄位和答案不同沒有關係。
-  - `tests/make_answer.py` 是出題用的：依任務單產生答案 `.lexa`，你不需要執行它。
+  - 任務單 `tests/tasks/民法債編總論_純文字_簡易測資.md` 逐筆寫明要選取的範圍、概念要新建還是選既有，請照著它在 `民法債編總論_純文字_簡易測資.docx` 上標註（docx 另外提供）。
+  - `tests/lexa_to_task.py`（把答案 `.lexa` 轉成任務單）和 `tests/make_answer.py`（依任務單產生答案 `.lexa`）是出題用的，你不需要執行。
 - `.gitignore`

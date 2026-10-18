@@ -27,6 +27,11 @@
 
 > 解釋段落是**術語那條標註的欄位**（`explanation_start/end`），不是另一條標註。存檔裡不應該出現只代表解釋的 `Annotation`。
 
+沒有對應內容時的填法（**不能留空**，也不能另外建立「無」「沒有」這類的假概念）：
+
+- 術語附近沒有解釋 → `explanation_start/end` 填術語本身的範圍（和 `start`, `end` 相同）。
+- 最上層的概念沒有更上層 → `broader_concept_id` 填自己（和 `concept_id` 相同）。
+
 `Document.concepts`（同一個檔案）是整份文件共用的概念清單，格式為 `{概念id: 概念名稱}`。
 新概念的 id 請沿用現有寫法：`"C_" + uuid.uuid4().hex[:8]`。
 
@@ -768,7 +773,7 @@ get_result() → (既有id, None) / (None, 新名稱) / (None, None)    ← 只�
 
 ```bash
 python tests/check_code.py
-python tests/check_lexa.py 你的檔案.lexa --task tests/tasks/範例任務.json
+python tests/check_lexa.py 你的檔案.lexa --task tests/tasks/民法債編總論_純文字_簡易測資.json
 ```
 
 這兩支只能檢查程式碼和存出來的資料，**和 GUI 操作有關的項目（兩種模式都能標註、點擊看概念、中途取消）仍然要自己實際操作確認**。
