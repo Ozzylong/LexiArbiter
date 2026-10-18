@@ -2,8 +2,8 @@
 
 用法（在專案根目錄）：
     python tests/check_lexa.py 你的檔案.lexa
-    python tests/check_lexa.py 你的檔案.lexa --task tests/tasks/範例任務.json
-    python tests/check_lexa.py 作業資料夾/ --task tests/tasks/範例任務.json   ← 資料夾內每個 .lexa 都檢查，最後印總表
+    python tests/check_lexa.py 你的檔案.lexa --task tests/tasks/民法債編總論_純文字_簡易測資.json
+    python tests/check_lexa.py 作業資料夾/ --task tests/tasks/民法債編總論_純文字_簡易測資.json   ← 資料夾內每個 .lexa 都檢查，最後印總表
 
 只讀 .lexa 的 JSON，不會 import 也不會執行 lexiarbiter 的程式碼。
 比對任務單時以「文字內容」與「概念名稱」比對，亂數產生的 id 不影響結果。
@@ -26,12 +26,14 @@ except Exception:
 
 TERM_LABELS = {"entity": "term"}
 CONCEPT_ID_RE = re.compile(r"^C_[0-9a-f]{8}$")
+# 沒有上位概念時應填自己，不能建這類假概念
+PLACEHOLDER_NAMES = {"", "無", "沒有", "none", "null", "-"}
 # 比對範圍時，只差頭尾這些字元算 WARN（手動選取常多選或少選）
 EDGE_CHARS = " \t\r\n　，。、；：！？「」『』（）()[]【】…,.;:!?\"'"
 
 
 # ---------------------------------------------------------------------------
-# 共用工具（make_answer.py 也會用到）
+# 共用工具（make_answer.py、lexa_to_task.py 也會用到）
 # ---------------------------------------------------------------------------
 
 def text_sha1(text: str) -> str:
@@ -167,6 +169,11 @@ def check_rules(data: dict, rep: Report) -> list[dict]:
     dup = [f"「{k}」：{v}" for k, v in by_name.items() if len(v) > 1]
     emit(dup, "concepts 沒有重複的名稱", "concepts 有重複的名稱（選擇既有概念時重複建立了）")
 
+    fake = [f"{cid}：「{cname}」" for cid, cname in concepts.items()
+            if str(cname).strip().lower() in PLACEHOLDER_NAMES]
+    emit(fake, "沒有「無」「沒有」之類的假概念",
+         "有「無」「沒有」之類的假概念（最上層概念的上位概念請填自己）")
+
     # 任兩條標註不重疊
     ordered = sorted(valid, key=lambda a: (a["start"], a["end"]))
     overlaps = []
@@ -178,8 +185,12 @@ def check_rules(data: dict, rep: Report) -> list[dict]:
     emit(overlaps, "標註之間沒有重疊", "有標註互相重疊")
 
     # 解釋不應另外存成一條標註
-    exp_spans = {(a.get("explanation_start"), a.get("explanation_end")) for a in valid}
-    exp_only = [_ann_name(text, a) for a in valid if (a["start"], a["end"]) in exp_spans]
+    # 只和「其他」標註的解釋比：沒有解釋時解釋範圍填術語本身，等於自己的解釋是允許的
+    exp_only = [
+        _ann_name(text, a) for a in valid
+        if any((b.get("explanation_start"), b.get("explanation_end")) == (a["start"], a["end"])
+               for b in valid if b is not a)
+    ]
     emit(exp_only, "沒有「只代表解釋」的標註", "有標註的範圍等於某個解釋段落（解釋應存在術語標註的欄位裡）")
 
     return valid
@@ -209,7 +220,7 @@ def check_task(data: dict, valid: list[dict], task: dict, rep: Report) -> None:
 
     want_len, want_sha = task.get("text_length"), task.get("text_sha1")
     if not want_sha:
-        rep.warn("任務單還沒記錄原文 hash，略過原文比對（請先執行 make_answer.py）")
+        rep.warn("任務單還沒記錄原文 hash，略過原文比對（請先執行 make_answer.py 或 lexa_to_task.py）")
     elif text_sha1(text) == want_sha:
         rep.ok("原文和任務單的文件一致")
     else:
@@ -296,7 +307,7 @@ def check_file(path: Path, task: dict | None) -> Report:
 def main() -> int:
     ap = argparse.ArgumentParser(description="檢查 .lexa 標註是否符合格式，並可和任務單比對。")
     ap.add_argument("path", type=Path, help=".lexa 檔案，或放了多個 .lexa 的資料夾")
-    ap.add_argument("--task", type=Path, help="任務單 JSON（例如 tests/tasks/範例任務.json）")
+    ap.add_argument("--task", type=Path, help="任務單 JSON（例如 tests/tasks/民法債編總論_純文字_簡易測資.json）")
     args = ap.parse_args()
 
     task = None
