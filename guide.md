@@ -239,6 +239,8 @@ apply_label(group_id, label_id)
  │     └─ 呼叫 self._confirm_replace_existing_group_label(ann, group_id, label_id) → False 就 return
  │     └─ 呼叫 self._resolve_same_group_overlap(ann.start, ann.end, group_id, exclude_id=ann.id) → False 就 return
  │     ann.labels[group_id] = label_id
+ │     ※ 情況 A 不會跳概念選擇器（上面的條件要有反白），概念不會變；模板只有「專業術語」一個標籤，
+ │       對已標註文字再套一次等於沒改，所以看起來沒反應。新增第二個 label（2-5）後才會真的改到東西。
  │
  ├─ 有選取文字：
  │     └─ 呼叫 self.editor.storage_selection() → (s, e)     ← 新標註的範圍就是從這裡來的
@@ -361,16 +363,25 @@ def _on_annotation_clicked(self, ann_id: str):
 
 ## 1-9. 滑鼠停在標註上（tooltip）
 
-這不是事件流程，tooltip 是事先設定好的：
-
 ```
-任何會呼叫 self.editor.refresh_highlights() 的地方（開檔、apply_label 收尾……）
-   → AnnotationEditor.refresh_highlights()
-        對每個標註 → 呼叫 self._apply_format_for_labels(fmt, ann)
-                        └─ fmt.setToolTip(文字)     ← tooltip 的內容在這裡決定
+滑鼠停在編輯區一下下
+   → AnnotationEditor.viewportEvent(ev)          (ev.type() == QEvent.ToolTip)
+        ├─ self._display_pos_under_mouse(ev.pos())  → 滑鼠下那個字的位置
+        ├─ self._doc.annotations_at(storage 位置)   → 蓋住這個字的標註
+        └─ QToolTip.showText(..., self._tooltip_text(ann))   ← tooltip 的內容在這裡決定
+
+提示顯示中、滑鼠繼續移動
+   → AnnotationEditor.mouseMoveEvent(ev)
+        ├─ 還在同一個標註上 → 不動
+        ├─ 滑進另一個標註   → 直接換成新內容
+        └─ 離開標註         → QToolTip.hideText()
 ```
 
-目前 tooltip 只顯示標籤名稱。想多顯示概念名稱，就修改 `_apply_format_for_labels` 裡傳給 `setToolTip` 的字串（在 editor 裡用 `self._doc.concepts.get(ann.concept_id)` 取得概念名稱）。
+每次停留都是當下重算，所以改完標籤再停上去會直接看到新內容。
+
+目前 tooltip 只顯示「群組：標籤」。想多顯示概念名稱，就修改 `_tooltip_text` 回傳的字串（在 editor 裡用 `self._doc.concepts.get(ann.concept_id)` 取得概念名稱）。
+
+> 注意：不能用 `fmt.setToolTip(...)`。標註高亮是用 `ExtraSelection` 畫的，它的 format 只負責繪製，tooltip 屬性不會生效。
 
 ---
 
