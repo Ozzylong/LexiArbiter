@@ -77,11 +77,11 @@ main.py 啟動
 
 ## 0-2. 三個角色：元件、signal、處理函式
 
-| 角色 | 是什麼 | template 裡的例子 |
-|---|---|---|
-| 元件（widget） | 畫面上看得到的東西 | 工具列按鈕、編輯器 `self.editor`、右側檔案清單 `self.file_panel` |
+| 角色         | 是什麼             | template 裡的例子                                                                     |
+| ---------- | --------------- | --------------------------------------------------------------------------------- |
+| 元件（widget） | 畫面上看得到的東西       | 工具列按鈕、編輯器 `self.editor`、右側檔案清單 `self.file_panel`                                  |
 | signal（事件） | 元件「發生某件事」時發出的通知 | `triggered`（按下工具列 / 選單項目）、`clicked`（按下 `QPushButton`）、`selection_changed`（選取範圍改變） |
-| 處理函式（slot） | 事件發生時要執行的函式 | `MainWindow.action_open` |
+| 處理函式（slot） | 事件發生時要執行的函式     | `MainWindow.action_open`                                                          |
 
 把這三者串起來的就是 `connect`：
 
@@ -154,12 +154,12 @@ def show_selection_length(self):
 
 事件不一定是「按按鈕」。下面是 `MainWindow.__init__` 裡實際的幾條接線：
 
-| 誰發出 | signal | 接到 | 說明 |
-|---|---|---|---|
-| 工具列「開啟檔案」 | `triggered` | `action_open` | 使用者按下按鈕 |
-| `self.editor` | `selection_changed(s, e)` | `_on_selection_changed` | 選取範圍改變，順便把範圍 `s, e` 當參數傳過來 |
-| `self.file_panel` | `file_open_requested(path)` | `_handle_file_open_requested` | 在檔案清單點兩下，把檔案路徑傳過來 |
-| `self._autosave_timer`（計時器） | `timeout` | `_autosave_tick` | 每 60 秒自動觸發一次，**不需要使用者做任何事** |
+| 誰發出                         | signal                      | 接到                            | 說明                          |
+| --------------------------- | --------------------------- | ----------------------------- | --------------------------- |
+| 工具列「開啟檔案」                   | `triggered`                 | `action_open`                 | 使用者按下按鈕                     |
+| `self.editor`               | `selection_changed(s, e)`   | `_on_selection_changed`       | 選取範圍改變，順便把範圍 `s, e` 當參數傳過來  |
+| `self.file_panel`           | `file_open_requested(path)` | `_handle_file_open_requested` | 在檔案清單點兩下，把檔案路徑傳過來           |
+| `self._autosave_timer`（計時器） | `timeout`                   | `_autosave_tick`              | 每 60 秒自動觸發一次，**不需要使用者做任何事** |
 
 除了 `connect`，還有第二種接事件的方式：**覆寫事件函式**。像 `AnnotationEditor.mouseReleaseEvent` 這種名字固定的函式，Qt 會在「放開滑鼠」時自動呼叫它。template 在這個函式裡判斷完狀況後，再 `emit` 自己定義的 signal（例如 `selection_finished`）通知 `MainWindow`，`MainWindow` 那邊再用 `connect` 接起來（見 1-2；1-8 會帶你自己接一條）。
 
