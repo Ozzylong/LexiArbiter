@@ -4,7 +4,7 @@
 
 - **第零部分：GUI 程式的基本邏輯**：GUI 程式和一般 Python script 跑法不一樣。沒寫過 GUI 的話請先讀這部分，後面的流程圖才看得懂。
 - **第一部分：程式運作對照**：你在程式裡做的每個操作（選文字、按按鈕、按右鍵…），各自對應到哪些函式、呼叫了什麼、回傳了什麼。想改某個操作的行為時，要去改哪裡。
-- **第二部分：GUI 元件怎麼產生、怎麼加**：如果想在右鍵選單或工具列多加一個按鈕、擴充概念對話框，要去哪個函式、加什麼程式碼。
+- **第二部分：GUI 元件怎麼產生、怎麼加**：如果想在右鍵選單或工具列多加一個按鈕、擴充概念對話框，要去哪個函式、可以照抄 template 裡的哪一段。
 
 > 位置一律用「檔案 → 類別.函式」標示。請用編輯器的搜尋或「跳至定義」功能找到它們。
 > `MainWindow` 在 `lexiarbiter/app.py`，`AnnotationEditor` 在 `lexiarbiter/widgets/editor.py`。
@@ -145,7 +145,7 @@ def show_selection_length(self):
                                                             #   把回傳值（None）拿去登記，之後按了沒反應或報錯
   ```
 
-- **想在呼叫時多帶參數**：`connect` 只能接「函式本身」，要帶參數就用 `lambda` 包一層，寫法見 2-1。
+- **想在呼叫時多帶參數**：`connect` 只能接「函式本身」，要帶參數就用 `lambda` 包一層，template 裡可以照抄的地方見 2-1。
 - **不要假設使用者一定照順序操作**：處理函式可能在任何時候被呼叫（例如還沒開檔就按按鈕），開頭先檢查狀態，像上面範例的 `if self.doc is None:`。
 
 ---
@@ -427,7 +427,7 @@ self.concept_panel.refresh(self.doc)   # 有改到概念時才需要
 | 各標籤（例如「專業術語」） | 有選取，或點在標註上時；**沒有選取時，略過該標註已經套用的標籤**（再套一次不會有任何變化）。模板只有一個標籤，所以沒反白、在已標註文字上右鍵時不會出現「專業術語」 | `apply_label(group_id, label_id)` → 見 1-6 |
 | 刪除此處標註 | 有選取，或點在標註上時 | `action_remove_annotation_at_cursor()` → 見 1-10 |
 
-> ⚠️ 選單項目按下後呼叫的 `apply_label`、`action_remove_annotation_at_cursor`，**不會**收到 `ann_id`，而是自己呼叫 `annotation_at_cursor()` 去找「文字游標」所在的標註。沒有選取時，右鍵已經先把文字游標移到點擊處，所以找到的就是右鍵點到的那一個；**有選取時文字游標不會動**，這兩個函式會改以選取範圍為準。如果你新增的項目要針對「右鍵點到的標註」做事，還是建議把 `ann` 直接傳給你的函式（寫法見 2-1）。
+> ⚠️ 選單項目按下後呼叫的 `apply_label`、`action_remove_annotation_at_cursor`，**不會**收到 `ann_id`，而是自己呼叫 `annotation_at_cursor()` 去找「文字游標」所在的標註。沒有選取時，右鍵已經先把文字游標移到點擊處，所以找到的就是右鍵點到的那一個；**有選取時文字游標不會動**，這兩個函式會改以選取範圍為準。如果你新增的項目要針對「右鍵點到的標註」做事，還是建議把 `ann` 直接傳給你的函式（可以照抄的地方見 2-1）。
 
 - 想讓右鍵在某些情況下不顯示某些項目：在 `_build_context_menu` 裡加條件後直接 `return`。目前開頭的「請先反白文字再標註」就是這種寫法；如果 `return` 時選單沒有任何項目，選單就不會跳出來。
 
@@ -455,7 +455,7 @@ self.concept_panel.refresh(self.doc)   # 有改到概念時才需要
 - 找標註的那三個呼叫，和 1-7 `AnnotationEditor._on_context_menu` 找 `ann_id` 的方式**完全一樣**；有多筆標註時，同樣取最後一筆。
 - 程式碼要加在 `mouseReleaseEvent` 裡 `if self.has_selection():` 的 `else` 分支。
 - 在 `AnnotationEditor` 裡，文件是 `self._doc`，不是 `self.doc`；還沒開檔時它是 `None`，要先擋掉（見 0-4）。
-- `emit`、`connect`、接收函式的完整寫法，可以參考 2-7（概念清單點擊），兩者是同一個模式。
+- `emit`、`connect`、接收函式怎麼寫，可以照抄 2-7 指出的 `FilePanel`（點清單項目 → `emit` → `MainWindow` 裡 `connect`），兩者是同一個模式。
 
 ---
 
@@ -556,35 +556,21 @@ self.concept_panel.refresh(self.doc)   # 有改到概念時才需要
 
 # 第二部分：GUI 元件怎麼產生、怎麼加
 
-以下範例中，`ann`、`my_func` 等名稱都是示意，請換成你自己的。
+你想加的介面，template 裡幾乎都有一樣或很像的寫法。以下每一節會指出可以照抄的地方，請先找到那段程式碼讀懂，再仿照它寫出你自己的版本。
 
 ## 2-1. 在右鍵選單加一個項目
 
 **產生位置：** `MainWindow._build_context_menu(menu, ann_id, sel_start, sel_end)`
 
-**在這個函式裡加**（函式中已經有 `ann` 可以直接用，第一行只有在你把程式碼加在它前面時才需要）：
+**照抄：** 同一個函式最後面「刪除此處標註」那 3 行（建立 `QAction` → `triggered.connect` 接到你的函式 → `menu.addAction`）。
 
-```python
-ann = self.doc.find_annotation(ann_id) if ann_id else None
+提示：
 
-if ann is not None and self.mode.id == "term_definition":   # 只在點到標註、且是術語模式時出現
-    act = QAction("編輯概念", menu)
-    act.triggered.connect(lambda: self.my_func(ann))         # 按下去要呼叫的函式
-    menu.addAction(act)
-```
-
-其他常用寫法：
-
-```python
-menu.addSeparator()                      # 分隔線
-sub = menu.addMenu("子選單名稱")          # 子選單，再用 sub.addAction(...) 加項目
-act.setEnabled(False)                    # 灰色、不能按
-act.setShortcut("Ctrl+K")                # 只顯示快捷鍵提示（真正的全域快捷鍵見 2-10）
-```
-
-- 項目會依 `addAction` 的順序由上往下排列。想放在最上面，就寫在函式最前面。
-- 如果在 `for` 迴圈裡建立多個項目，`lambda` 要用預設參數綁定當下的值，否則每個按鈕都會拿到最後一個值：
-  `act.triggered.connect(lambda _=False, a=a: self.my_func(a))`
+- 函式中段已經用 `ann_id` 取得 `ann`（右鍵點到的標註，沒點到就是 `None`）。想「只在點到標註時出現」，就把程式碼加在它後面、用 `ann` 判斷；想「只在術語模式出現」，就判斷 `self.mode.id`（`apply_label` 開頭有一樣的判斷）。
+- 分隔線、灰色不能按的項目、快捷鍵提示，這個函式裡都有現成的例子：`menu.addSeparator()`、`hint.setEnabled(False)`、`act_copy.setShortcut(...)`。子選單可以參考 `_build_menu` 裡的 `addMenu`。
+- 在右鍵選單上 `setShortcut` 只會顯示提示文字，不會變成真的快捷鍵（真的快捷鍵見 2-3、2-10）。
+- 項目會依 `addAction` 的順序由上往下排列。
+- 按下去時要把 `ann` 傳給你的函式，就要用 `lambda` 包一層，參考 `_build_menu` 裡「下一個檔案」那行。如果是在 `for` 迴圈裡建立多個項目，`lambda` 要用預設參數綁住當下的值，否則每個項目都會拿到最後一個值，參考 `_make_quick_label_widget` 裡 `h=handler` 那行。
 
 ---
 
@@ -594,24 +580,10 @@ act.setShortcut("Ctrl+K")                # 只顯示快捷鍵提示（真正的�
 
 > 按鈕為什麼按了會呼叫你的函式，見第零部分；0-3 有一個從頭到尾的完整按鈕範例。
 
-一般按鈕（兩種模式下都會出現）：在 `_build_toolbar` 裡，仿照「開啟檔案」那幾行加：
-
-```python
-a_xxx = tb.addAction(_swatch_icon("#FFFFFF"), "按鈕文字")
-a_xxx.triggered.connect(self.my_func)
-```
-
-如果想要彩色的按鈕：
-
-```python
-btn = QPushButton("按鈕文字")
-btn.setStyleSheet("background-color: #FFE082;")
-btn.clicked.connect(self.my_func)
-tb.addWidget(btn)
-```
-
+- **一般按鈕**（兩種模式下都會出現）：照抄 `_build_toolbar` 裡「開啟檔案」那 2 行。
+- **彩色按鈕**：照抄 `_populate_label_buttons` 迴圈裡建立按鈕的寫法（`QPushButton` → `setStyleSheet` → `clicked.connect` → `self.toolbar.addWidget`），樣式字串可以參考 `_button_style_for`。注意 `QPushButton` 的 signal 是 `clicked`，不是 `triggered`。
 - **標籤按鈕不用手動加**：它們是 `_populate_label_buttons` 依照標註模式 JSON 自動產生的（見 2-5），而且只在 `auto_popup_on_selection: false` 時出現。
-- 想之後動態把按鈕藏起來或顯示出來，就把 `addAction` / `addWidget` 回傳的物件存在 `self` 上，再呼叫 `.setVisible(False/True)`。
+- **想之後把按鈕藏起來或顯示出來**：把 `addAction` / `addWidget` 回傳的物件存在 `self` 上，再呼叫 `.setVisible(...)`。`MainWindow.__init__` 裡的 `self.concept_panel.setVisible(...)` 就是一樣的用法。
 
 ---
 
@@ -619,14 +591,11 @@ tb.addWidget(btn)
 
 **產生位置：** `MainWindow._build_menu`
 
-仿照「刪除游標處標註」的寫法：
+**照抄：** 「刪除游標處標註」（`self.act_remove_ann`）那 4 行。
 
-```python
-self.act_xxx = QAction("項目名稱", self)
-self.act_xxx.setShortcut(self.prefs.app_shortcut("xxx", "Ctrl+K"))   # 使用者可在設定檔覆寫
-self.act_xxx.triggered.connect(self.my_func)
-m_edit.addAction(self.act_xxx)        # m_file / m_edit 是現有的選單
-```
+- 快捷鍵用 `self.prefs.app_shortcut(名稱, 預設值)` 取得，使用者就能在設定檔覆寫。加在選單列上的快捷鍵，在整個視窗裡都有效。
+- 要放進哪個選單，就 `addAction` 到那個選單：`m_file`、`m_edit` 是現有的選單；想開一個新的選單，參考同一個函式裡的 `mb.addMenu(...)`。
+- 如果這個項目只在開檔後才能用，參考 `MainWindow._update_actions`，它負責在沒開檔時把項目變灰。
 
 ---
 
@@ -647,13 +616,13 @@ m_edit.addAction(self.act_xxx)        # m_file / m_edit 是現有的選單
 { "id": "term", "name": "專業術語", "tag": "Term", "color": "#FFE082", "shortcut": "1" }
 ```
 
-| 欄位 | 用途 |
-|---|---|
-| `id` | 存進 `Annotation.labels` 的值；`apply_label` 收到的 `label_id` |
-| `name` | 按鈕與選單上顯示的文字 |
-| `tag` | 匯出 .txt 時用的標籤字串 |
-| `color` | 按鈕與高亮的顏色 |
-| `shortcut` | 快捷鍵 |
+| 欄位         | 用途                                                     |
+| ---------- | ------------------------------------------------------ |
+| `id`       | 存進 `Annotation.labels` 的值；`apply_label` 收到的 `label_id` |
+| `name`     | 按鈕與選單上顯示的文字                                            |
+| `tag`      | 匯出 .txt 時用的標籤字串                                        |
+| `color`    | 按鈕與高亮的顏色                                               |
+| `shortcut` | 快捷鍵                                                    |
 
 改完重新啟動程式後，工具列、popup、選單列、右鍵選單都會自動出現新的標籤。
 
@@ -683,85 +652,35 @@ get_result() → (既有id, None) / (None, 新名稱) / (None, None)    ← 只�
 
 ### (a) 想多一個欄位（例如「上位概念」）
 
-要改三個地方：
+要改三個地方，每個地方在 template 裡都有可以照抄的寫法：
 
-1. **`__init__`**：在 `btn_layout` 之前加入新元件。
-
-   ```python
-   layout.addWidget(QLabel("上位概念："))
-   self.broader_combo = QComboBox()
-   self.broader_combo.setEditable(True)                  # 可以選，也可以自己輸入
-   for cid, name in concepts.items():
-       self.broader_combo.addItem(name, cid)             # 顯示名稱，背後存 id
-   layout.addWidget(self.broader_combo)
-   ```
-
-   如果想要「打字時自動篩選」：
-
-   ```python
-   comp = QCompleter(list(concepts.values()), self)
-   comp.setFilterMode(Qt.MatchContains)
-   self.broader_combo.setCompleter(comp)
-   ```
-
-   （記得在檔案開頭的 import 加上 `QComboBox`、`QCompleter`。）
-
-2. **`get_result`**：讓它也回傳新欄位的值。
-
-   ```python
-   text = self.broader_combo.currentText().strip()
-   idx = self.broader_combo.findText(text)
-   broader_id = self.broader_combo.itemData(idx) if idx >= 0 else None   # 選到既有概念 → id
-   broader_new = None if idx >= 0 else text                              # 自己打的 → 新名稱
-   ```
-
-   然後把這兩個值加進回傳的 tuple。
-
-3. **`apply_label`**：修改 `selected_id, new_name = dlg.get_result()` 這一行，配合新的回傳格式拆開，再把值填進 `Annotation`。
+1. **`__init__`**：「從既有概念選一個，或輸入新的」，對話框裡現有的概念欄位已經做過一次了：`QLabel` 標題 → `list_widget` 列出既有概念，並用 `_concept_map` 記住「名稱 → id」→ `input_edit` 讓使用者輸入 → 最後用 `itemClicked` 把點到的項目填進輸入框。新欄位可以照這一整套再做一份。
+   - 新元件要加在 `btn_layout` 之前，否則會排到按鈕下面。
+   - 想改用下拉選單，或「打字時自動篩選」，可以查 `QComboBox`、`QCompleter`。記得在檔案開頭的 import 補上。
+2. **`get_result`**：目前只讀 `self.input_edit`，但已經會判斷「選到既有概念 → 回傳 id」還是「自己輸入 → 回傳新名稱」。新欄位照同樣的邏輯再判斷一次，再把結果加進回傳值。
+3. **`apply_label`**：`dlg.get_result()` 的回傳格式改了，接收的那一行要跟著改。
+   - 新欄位如果是新名稱，就照抄同一段的「建立新概念」（產生 id → 寫進 `self.doc.concepts` → `self.concept_panel.refresh`）。
+   - `apply_label` 裡有三個地方會寫入 `concept_id`（兩處更新既有標註、一處建立新的 `Annotation`），新欄位也要在這三個地方一起處理。
 
 ### (b) 想在對話框裡顯示更多資訊（例如術語文字、解釋文字，或編輯時的預設值）
 
-在 `__init__` 加參數，呼叫端（`apply_label`）傳進來的值要一起改：
+照抄 `default_text` 的做法，它是「從呼叫端帶資料進對話框」的現成範例：
 
-```python
-def __init__(self, concepts, default_text="", explanation_text="", default_broader_id=None, parent=None):
-    ...
-    txt = QPlainTextEdit(explanation_text)
-    txt.setReadOnly(True)                 # 只能看、不能改
-    layout.addWidget(txt)
-    ...
-    if default_broader_id in concepts:    # 編輯既有標註時，預先選好原本的值
-        self.broader_combo.setCurrentText(concepts[default_broader_id])
-```
+- `apply_label` 先取得選取的文字（`selected_text`），建立對話框時當作參數傳進去。
+- `__init__` 的參數列有 `default_text`，再用 `self.input_edit.setText(default_text)` 填進元件。
+
+想多帶什麼資料進來，就照這條路多加一個參數，呼叫端也要一起改。要顯示只能看、不能改的文字，可以參考 `AnnotationEditor.__init__` 裡的 `setReadOnly(True)`（編輯區本身就是一個唯讀的文字框）。
 
 ### (c) 想在按「確定」時檢查輸入
 
-在類別裡覆寫 `accept`：
-
-```python
-def accept(self):
-    if not self.input_edit.text().strip():
-        QMessageBox.warning(self, "錯誤", "概念不能空白")
-        return                  # 不關閉對話框
-    super().accept()            # 通過檢查才關閉，exec() 會回傳 True
-```
+- `btn_ok` 按下去呼叫的是 `self.accept`（`QDialog` 內建的方法），所以要在類別裡覆寫 `accept`。
+- 「檢查沒過就中止、通過才交給 Qt 繼續」的模式，可以參考 `MainWindow.closeEvent`：沒通過就直接 `return`，通過才呼叫 `super()` 的同名方法。`accept` 裡沒有呼叫 `super().accept()`，對話框就不會關閉。
+- 跳警告視窗的寫法 template 裡到處都有，例如 `MainWindow._warn_if_group_conflicts` 裡的 `QMessageBox.warning`（`concept_panel.py` 已經 import 了 `QMessageBox`）。
 
 ### (d) 想多一個按鈕（例如「回上一步」）
 
-```python
-# __init__ 裡
-self.wants_back = False
-self.btn_back = QPushButton("回上一步")
-self.btn_back.clicked.connect(self._on_back)
-btn_layout.addWidget(self.btn_back)
-
-# 類別裡
-def _on_back(self):
-    self.wants_back = True
-    self.reject()               # 關閉對話框，exec() 會回傳 False
-```
-
-呼叫端在 `dlg.exec()` 之後讀 `dlg.wants_back`，決定下一步要做什麼。
+- 按鈕本身照抄 `btn_cancel` 那幾行（建立 `QPushButton` → `clicked.connect` → `btn_layout.addWidget`）。
+- `exec()` 只會回傳 True（`accept`）或 False（`reject`），分不出「取消」和「回上一步」。可以在按鈕的處理函式裡先設一個屬性當作記號，再呼叫 `self.reject()` 關閉對話框；呼叫端在 `dlg.exec()` 之後讀這個屬性，決定下一步要做什麼。
 
 ### (e) 想整個重寫
 
@@ -774,52 +693,29 @@ def _on_back(self):
 **位置：** `widgets/concept_panel.py` → `ConceptSidebar`
 
 - 清單內容在 `refresh(doc)` 裡產生，每次呼叫都會清空後重新列出 `doc.concepts`。
-- `concept_clicked = Signal(str)` 已經宣告，但還沒接上任何東西。想讓「點擊概念」有反應：
+- `concept_clicked = Signal(str)` 已經宣告，但還沒接上任何東西。
 
-```python
-# refresh() 裡：用 QListWidgetItem 把 id 存在項目上（記得 import QListWidgetItem）
-item = QListWidgetItem(f"● {name}")
-item.setData(Qt.UserRole, cid)
-self.list_widget.addItem(item)
+想讓「點擊概念」有反應，**照抄 `widgets/file_panel.py` → `FilePanel`**。它是同一個模式的完整範例：點清單項目 → 發出帶資料的 signal → `MainWindow` 接起來。
 
-# __init__() 裡：點擊時發出 signal
-self.list_widget.itemClicked.connect(
-    lambda item: self.concept_clicked.emit(item.data(Qt.UserRole)))
+| 要做的事 | `FilePanel` 裡對應的地方 |
+|---|---|
+| 讓每個項目記住自己的 id | `refresh` 裡用 `QListWidgetItem` 建立項目，再用 `setData(Qt.UserRole, ...)` 存資料 |
+| 點擊時取出 id、發出 signal | `__init__` 把清單的 signal 接到 `_on_item_activated`，它用 `item.data(Qt.UserRole)` 取出資料後 `emit` |
+| 在 `MainWindow` 接到你的函式 | `MainWindow.__init__` 裡 `self.file_panel.file_open_requested.connect(...)` 那行 |
 
-# MainWindow.__init__ 裡：接到你的函式
-self.concept_panel.concept_clicked.connect(self.my_func)    # my_func(cid: str)
-```
+- `FilePanel` 接的是 `itemActivated`（雙擊或按 Enter 才觸發）；想要單擊就有反應，改用 `itemClicked`（`ConceptSelectionDialog` 裡有用到）。
+- 記得在 `concept_panel.py` 開頭 import `QListWidgetItem`。
 
 ---
 
 ## 2-8. 顯示一個小資訊視窗（例如點擊標註時）
 
-**最簡單的做法：用 tooltip**（記得 import `QToolTip`，它在 `PySide6.QtWidgets`）
-
-```python
-QToolTip.showText(QCursor.pos(), "概念：過擬合\n上位：機器學習問題")   # QCursor 在 PySide6.QtGui
-```
-
-**想自訂內容：用小視窗**（點視窗外面會自動關閉）
-
-```python
-popup = QWidget(self, Qt.Popup)
-lay = QVBoxLayout(popup)
-lay.addWidget(QLabel("概念：..."))
-lay.addWidget(QLabel("上位概念：..."))
-popup.adjustSize()
-popup.move(QCursor.pos())        # 顯示在滑鼠位置
-popup.show()
-```
-
-如果想把視窗放在「某個標註」旁邊，而不是滑鼠旁邊：
-
-```python
-cur = self.editor.textCursor()
-cur.setPosition(self.editor._omap.to_display(ann.start))
-rect = self.editor.cursorRect(cur)
-pos = self.editor.viewport().mapToGlobal(rect.topLeft())   # 標註開頭在螢幕上的位置
-```
+- **最簡單：用 tooltip。** 照抄 `AnnotationEditor.viewportEvent` 裡的 `QToolTip.showText(...)`。想顯示在滑鼠目前的位置，可以查 `QCursor.pos()`（在 `PySide6.QtGui`）。
+- **想自訂內容、點外面會自動關閉：** 參考 `MainWindow._show_quick_label_popup`。它用 `QMenu` 當外框，再用 `QWidgetAction` 把自己做的元件（`_make_quick_label_widget` 回傳的 `QFrame`）塞進去，最後用 `menu.exec(位置)` 顯示。把裡面的按鈕換成 `QLabel`，就是一個資訊視窗。
+- **想把視窗放在「某個標註」旁邊，而不是滑鼠旁邊：**
+  - 建立一個 cursor 並設到標註的位置：參考 `AnnotationEditor.jump_to_annotation` 的寫法（`ann.start` 要先經過 `_omap.to_display` 轉換）。
+  - 取得那個位置在畫面上的方框：參考 `_display_pos_under_mouse` 裡的 `cursorRect`。
+  - `cursorRect` 回傳的是編輯區（viewport）裡的座標，`exec` / `showText` 要的是螢幕座標，要再用 `viewport().mapToGlobal(...)` 轉換。
 
 ---
 
@@ -827,39 +723,13 @@ pos = self.editor.viewport().mapToGlobal(rect.topLeft())   # 標註開頭在螢�
 
 **位置：** `AnnotationEditor.refresh_highlights`
 
-這個函式每次都會重新產生所有高亮，然後用 `self.setExtraSelections(selections)` 一次套用。想多畫一段：
+這個函式每次都會重新產生所有高亮，然後用 `self.setExtraSelections(selections)` 一次套用。想多畫一段，可以拆成三步：
 
-1. 在 `AnnotationEditor.__init__` 加一個屬性，例如 `self._extra_range = None`。
-2. 在 `refresh_highlights` 的 `for ann in ...` 迴圈前後，仿照迴圈內建立高亮的那幾行，多畫一段：
+1. **記住要畫哪一段**：在 `AnnotationEditor.__init__` 加一個屬性。可以參考 `_tooltip_ann_ids`，它也是用來「記住目前狀態」的屬性。
+2. **把它畫出來**：在 `refresh_highlights` 裡，照抄 `for ann in ...` 迴圈內建立一個 `ExtraSelection` 的那幾行，範圍換成你記住的那一段，再 `append` 進 `selections`。顏色的設法參考 `_apply_format_for_labels` 最後的 `fmt.setBackground(...)`。
+3. **讓 `MainWindow` 能開關它**：在 `AnnotationEditor` 寫方法去改那個屬性，改完呼叫 `self.refresh_highlights()` 重畫（`attach` 的結尾也是這樣做）。`MainWindow` 再透過 `self.editor.你的方法(...)` 呼叫。
 
-   ```python
-   if self._extra_range:
-       start, end = self._extra_range
-       sel = QTextEdit.ExtraSelection()
-       cursor = self.textCursor()
-       cursor.setPosition(self._omap.to_display(start))
-       cursor.setPosition(self._omap.to_display(end), QTextCursor.KeepAnchor)
-       sel.cursor = cursor
-       fmt = QTextCharFormat()
-       fmt.setBackground(QColor("#90CAF9"))
-       sel.format = fmt
-       selections.append(sel)
-   ```
-
-3. 寫兩個方法給 `MainWindow` 呼叫：
-
-   ```python
-   def set_extra_range(self, start, end):
-       self._extra_range = (start, end)
-       self.refresh_highlights()
-
-   def clear_extra_range(self):
-       self._extra_range = None
-       self.refresh_highlights()
-   ```
-
-   在 `MainWindow` 裡就可以這樣用：`self.editor.set_extra_range(ann.explanation_start, ann.explanation_end)`。
-
+- 範圍存的是 storage offset，畫之前要用 `_omap.to_display` 轉換（迴圈裡就是這樣做的）。
 - `selections` 列表中越後面的項目會畫在越上層。
 - 不要在其他地方另外呼叫 `setExtraSelections`，否則下次 `refresh_highlights()` 時會被蓋掉。
 
@@ -867,15 +737,15 @@ pos = self.editor.viewport().mapToGlobal(rect.topLeft())   # 標註開頭在螢�
 
 ## 2-10. 其他常用介面
 
-| 想做的事 | 寫法 | 放在哪裡 |
+| 想做的事 | template 裡可以抄的地方 | 放在哪裡 |
 |---|---|---|
-| 狀態列訊息 | `self.status.showMessage("請選取解釋段落", 0)` | `MainWindow` 任何地方 |
-| 是 / 否確認 | `if QMessageBox.question(self, "標題", "內容", QMessageBox.Yes \| QMessageBox.No) == QMessageBox.Yes:` | 同上 |
-| 警告 / 提示 | `QMessageBox.warning(self, "標題", "內容")`、`QMessageBox.information(...)` | 同上 |
-| 改變滑鼠游標 | `self.editor.viewport().setCursor(Qt.CrossCursor)`，還原用 `Qt.IBeamCursor` | 同上 |
-| 浮在編輯器上的提示字 | `self.hint = QLabel("提示", self.editor)`，之後 `self.hint.show()` / `.hide()` / `.move(x, y)` | 在 `__init__` 建立 |
-| 全域快捷鍵（例如 Esc） | `self._esc = QShortcut(QKeySequence(Qt.Key_Escape), self)`<br>`self._esc.activated.connect(self.my_func)` | `MainWindow._setup_app_shortcuts`（目前是空的）；`QShortcut` 要從 `PySide6.QtGui` import |
-| 新增一個使用者設定 | 讀取：`self.prefs.behavior.get("my_key", 預設值)`<br>預設值寫進 `core/config.py` 的 `DEFAULT_PREFERENCES` | |
+| 狀態列訊息 | `apply_label` 開頭的 `self.status.showMessage(...)`；第二個參數是顯示幾毫秒，`0` 表示一直顯示 | `MainWindow` 任何地方 |
+| 是 / 否確認 | `MainWindow._confirm_replace_existing_group_label` 裡的 `QMessageBox.question` | 同上 |
+| 警告 / 提示 | `_warn_if_group_conflicts` 裡的 `QMessageBox.warning`、`action_export` 裡的 `QMessageBox.information` | 同上 |
+| 改變滑鼠游標 | `_populate_label_buttons` 裡的 `btn.setCursor(...)`；要改編輯區的游標，對象換成 `self.editor.viewport()`，還原用 `Qt.IBeamCursor` | 同上 |
+| 浮在編輯器上的提示字 | template 沒有現成範例：建立 `QLabel` 時把 `self.editor` 當作 parent，它就會浮在編輯器上，之後用 `show()` / `hide()` / `move()` 控制 | 在 `__init__` 建立 |
+| 全域快捷鍵（例如 Esc） | template 沒有現成範例（`editor.py` 只 import 了 `QShortcut`，沒有用到）：查 `QShortcut`、`QKeySequence`，它的 signal 是 `activated`。如果這個快捷鍵也想出現在選單上，用 2-3 的做法即可 | `MainWindow._setup_app_shortcuts`（目前是空的）；`QShortcut` 要從 `PySide6.QtGui` import |
+| 新增一個使用者設定 | 讀取：照抄 `apply_label` 裡的 `self.prefs.behavior.get("show_concept_popup", True)`<br>預設值：照抄 `core/config.py` → `DEFAULT_PREFERENCES` 裡 `show_concept_popup` 那行 | |
 
 ---
 
