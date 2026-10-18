@@ -161,7 +161,7 @@ def show_selection_length(self):
 | `self.file_panel`           | `file_open_requested(path)` | `_handle_file_open_requested` | 在檔案清單點兩下，把檔案路徑傳過來           |
 | `self._autosave_timer`（計時器） | `timeout`                   | `_autosave_tick`              | 每 60 秒自動觸發一次，**不需要使用者做任何事** |
 
-除了 `connect`，還有第二種接事件的方式：**覆寫事件函式**。像 `AnnotationEditor.mouseReleaseEvent` 這種名字固定的函式，Qt 會在「放開滑鼠」時自動呼叫它。template 在這個函式裡判斷完狀況後，再 `emit` 自己定義的 signal（例如 `selection_finished`）通知 `MainWindow`，`MainWindow` 那邊再用 `connect` 接起來（見 1-2；1-8 會帶你自己接一條）。
+除了 `connect`，還有第二種接事件的方式：**覆寫事件函式**。像 `AnnotationEditor.mouseReleaseEvent` 這種名字固定的函式，Qt 會在「放開滑鼠」時自動呼叫它。template 在這個函式裡判斷完狀況後，再 `emit` 自己定義的 signal（例如 `selection_finished`）通知 `MainWindow`，`MainWindow` 那邊再用 `connect` 接起來（見 1-2；1-8 要你自己接一條）。
 
 **第一部分的每一張流程圖，其實都在回答同一個問題：「哪個事件發生了 → 它被 connect 到哪個函式 → 那個函式做了什麼」。** 想加新功能，就是「挑一個事件 → connect 到你寫的函式」。
 
@@ -450,35 +450,12 @@ self.concept_panel.refresh(self.doc)   # 有改到概念時才需要
                     （顯示資訊、高亮解釋段落……見 2-8、2-9）
 ```
 
-找標註的那三個呼叫，和 1-7 右鍵找 `ann_id` 的方式**完全一樣**，可以參考 `AnnotationEditor._on_context_menu`。
+提示：
 
-**步驟 1：在 `AnnotationEditor.mouseReleaseEvent` 的 `if self.has_selection():` 後面加上 `else`**
-
-```python
-else:
-    if self._doc is not None:                              # 還沒開檔時不處理
-        cursor = self.cursorForPosition(ev.position().toPoint())
-        pos = self._omap.to_storage(cursor.position())     # 點擊位置
-        anns = self._doc.annotations_at(pos)                # 這個位置上的所有標註（list）
-        if anns:
-            self.annotation_clicked.emit(anns[-1].id)       # 發出 signal，帶上標註 id
-```
-
-（在 `AnnotationEditor` 裡，文件是 `self._doc`，不是 `self.doc`。）
-
-**步驟 2：在 `MainWindow.__init__` 接線**
-
-```python
-self.editor.annotation_clicked.connect(self._on_annotation_clicked)
-```
-
-**步驟 3：在 `MainWindow` 寫一個接收的函式**
-
-```python
-def _on_annotation_clicked(self, ann_id: str):
-    ann = self.doc.find_annotation(ann_id)   # 取得 Annotation 物件
-    ...                                       # 顯示資訊、高亮解釋段落等，見 2-8、2-9
-```
+- 找標註的那三個呼叫，和 1-7 `AnnotationEditor._on_context_menu` 找 `ann_id` 的方式**完全一樣**；有多筆標註時，同樣取最後一筆。
+- 程式碼要加在 `mouseReleaseEvent` 裡 `if self.has_selection():` 的 `else` 分支。
+- 在 `AnnotationEditor` 裡，文件是 `self._doc`，不是 `self.doc`；還沒開檔時它是 `None`，要先擋掉（見 0-4）。
+- `emit`、`connect`、接收函式的完整寫法，可以參考 2-7（概念清單點擊），兩者是同一個模式。
 
 ---
 
