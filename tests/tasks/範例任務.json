@@ -1,0 +1,31 @@
+{
+  "document": "民法債編總論_純文字.docx",
+  "text_length": 4346,
+  "text_sha1": "759e6954850ee0661f9429e2e6b08e91b6c2ef81",
+  "items": [
+    {
+      "term": "債（債之關係）",
+      "term_occurrence": 1,
+      "explanation": "指互相對立的當事人間，一方有要求他方為一定作為或不作為之權利，他方負有一定義務（作為或不作為）之法律關係。",
+      "explanation_occurrence": 1,
+      "concept": "債之關係",
+      "broader_concept": "法律關係"
+    },
+    {
+      "term": "債權人",
+      "term_occurrence": 10,
+      "explanation": "債之關係賦與債權人請求債務人為一定給付之權利，且債務人依債之關係向債權人為一定給付時，債之關係得作為債權人受領、保有給付的法律上原因，所受領之給付不構成不當得利。",
+      "explanation_occurrence": 3,
+      "concept": "債權人",
+      "broader_concept": "債之關係之要素"
+    },
+    {
+      "term": "債務人",
+      "term_occurrence": 10,
+      "explanation": "債務人亦因債之關係，負有依債之本旨向債權人為一定給付之義務。",
+      "explanation_occurrence": 1,
+      "concept": "債務人",
+      "broader_concept": "債之關係之要素"
+    }
+  ]
+}
