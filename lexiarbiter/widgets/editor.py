@@ -17,10 +17,10 @@ from typing import Optional
 
 log = logging.getLogger(__name__)
 
-from PySide6.QtCore import Qt, QPoint, Signal
+from PySide6.QtCore import Qt, QPoint, QRectF, Signal
 from PySide6.QtGui import (
     QAction, QColor, QGuiApplication, QKeySequence, QShortcut, QTextCharFormat,
-    QTextCursor, QFont, QPalette,
+    QTextBlockFormat, QTextCursor, QFont, QPalette, QPainter, QPainterPath,
 )
 from PySide6.QtWidgets import QMenu, QTextEdit
 
@@ -227,10 +227,81 @@ class AnnotationEditor(QTextEdit):
     def highlight_explanation(self, start: int, end: int, color: str | QColor):
         self._expl_highlight = (start, end, color)
         self.refresh_highlights()
+        self.viewport().update()
 
     def clear_explanation_highlight(self):
         self._expl_highlight = None
         self.refresh_highlights()
+        self.viewport().update()
+
+    def paintEvent(self, ev):
+        # 解釋段落以實心色塊畫在文字與標註底色之下：術語維持原本底色，
+        # 其餘範圍（含行距空隙）連成一整塊，不會因與術語重疊而斷開
+        if self._expl_highlight and self._omap is not None:
+            start, end, color = self._expl_highlight
+            d_start = self._omap.to_display(start)
+            d_end = self._omap.to_display(end)
+            fill_color = color if isinstance(color, QColor) else _hex_to_qcolor(color, alpha=255)
+            if d_end > d_start and fill_color is not None:
+                path = self._explanation_block_path(d_start, d_end)
+                if not path.isEmpty():
+                    painter = QPainter(self.viewport())
+                    try:
+                        painter.fillPath(path, fill_color)
+                    finally:
+                        painter.end()
+        super().paintEvent(ev)
+
+    def _explanation_block_path(self, d_start: int, d_end: int) -> QPainterPath:
+        """以 display offset 範圍計算解釋段落色塊（viewport 座標），各行矩形合併為單一區塊。
+
+        上下外擴半個行距（落在行距空白，不會碰到任何字）：相鄰行剛好在行距中線接合，
+        首行上方與末行下方的色邊厚度也與行間一致；左右只外擴 1px，避免溢到解釋段落
+        範圍外的前後鄰字上（中文字之間沒有空隙）。
+        座標取整數像素，避免小數行高造成邊緣混色、各行邊界不一。
+        """
+        doc = self.document()
+        doc_layout = doc.documentLayout()
+        dx = self.horizontalScrollBar().value()
+        dy = self.verticalScrollBar().value()
+        rects: list[QRectF] = []
+        block = doc.findBlock(d_start)
+        while block.isValid() and block.position() < d_end:
+            layout = block.layout()
+            b_pos = block.position()
+            origin = doc_layout.blockBoundingRect(block).topLeft()
+            block_fmt = block.blockFormat()
+            factor = 1.0
+            # lineHeightType() 回傳 int，需與 enum 的 value 比較
+            if block_fmt.lineHeightType() == QTextBlockFormat.ProportionalHeight.value:
+                factor = block_fmt.lineHeight() / 100.0
+            for i in range(layout.lineCount()):
+                line = layout.lineAt(i)
+                l_start = b_pos + line.textStart()
+                l_end = l_start + line.textLength()
+                s = max(l_start, d_start)
+                e = min(l_end, d_end)
+                if e <= s:
+                    continue
+                x1 = line.cursorToX(s - b_pos)[0]
+                x2 = line.cursorToX(e - b_pos)[0]
+                half_gap = max(0.0, line.height() * (factor - 1.0) / 2.0)
+                left = origin.x() - dx + min(x1, x2) - 1
+                right = origin.x() - dx + max(x1, x2) + 1
+                top = origin.y() - dy + line.y() - half_gap
+                bottom = origin.y() - dy + line.y() + line.height() + half_gap
+                rects.append(QRectF(round(left), round(top),
+                                    round(right) - round(left), round(bottom) - round(top)))
+            block = block.next()
+
+        path = QPainterPath()
+        path.setFillRule(Qt.WindingFill)
+        for i, rect in enumerate(rects):
+            # 中間夾空白行或段落間距時，往下補到下一行頂端，維持連續
+            if i + 1 < len(rects) and rect.bottom() < rects[i + 1].top():
+                rect.setBottom(rects[i + 1].top())
+            path.addRect(rect)
+        return path.simplified()
 
     def highlight_pending_term(self, start: int, end: int, color: str | QColor):
         self._pending_term_highlight = (start, end, color)
@@ -246,7 +317,7 @@ class AnnotationEditor(QTextEdit):
         try:
             selections = []
             
-            # 優先繪製解釋段落高亮 (放底層)
+            # 解釋段落：底色由 paintEvent 的實心色塊負責，這裡只設文字前景色 (放底層)
             if self._expl_highlight:
                 start, end, color = self._expl_highlight
                 sel = QTextEdit.ExtraSelection()
@@ -262,7 +333,6 @@ class AnnotationEditor(QTextEdit):
                 else:
                     bg_color = _hex_to_qcolor(color, alpha=255)
                 if bg_color:
-                    fmt.setBackground(bg_color)
                     fmt.setForeground(_text_color_for_bg(bg_color))
                 sel.format = fmt
                 selections.append(sel)
